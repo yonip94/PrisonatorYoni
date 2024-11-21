@@ -2576,7 +2576,10 @@ static void manger_handle_flash_operations_L(void)
 {
     if (get_power_off_flag() == 1)
     {
-        ets_printf("power off is on-going - skip handle flash operations\r\n");
+        if (manager_send_last_comm()==BT_COMMUNICATION_DETECTED)
+        {
+            ets_printf("power off is on-going - skip handle flash operations\r\n");
+        }
         return;
     }
 

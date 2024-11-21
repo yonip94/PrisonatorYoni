@@ -23,6 +23,7 @@
 #include "resend_packet_method.h"
 #include "led.h"
 #include "checksum_calc.h"
+#include "power.h"
 
 /*******************************************************************/
 /*******************************************************************/
@@ -755,9 +756,12 @@ void external_flash_prepare_packet (uint8_t* packet, uint16_t packet_size)
     /***************************************************************/
     if (index_of_bt_packet_in_nvs_packet_mem_2>=4)
     {
-        //if (manager_send_last_comm()!=UART_COMMUNICATION_DETECTED)
+        //if (manager_send_last_comm()==BT_COMMUNICATION_DETECTED)
         //{
-            ets_printf("Critical failure !!! index_of_bt_packet_in_nvs_packet_mem_2=%u must be between 0 to 3\r\n",index_of_bt_packet_in_nvs_packet_mem_2);
+            if (get_power_off_flag() == 0)
+            {
+                ets_printf("Critical failure !!! index_of_bt_packet_in_nvs_packet_mem_2=%u must be between 0 to 3\r\n",index_of_bt_packet_in_nvs_packet_mem_2);
+            }
         //}
     }
 

@@ -18,6 +18,16 @@ Each version should pass the following tests before it can be released:
        - The ACC  (all sensors on all axes) should be with spikes of less then abs(1.2)
 5. During long navigation (10 minutes) there are no packet losses and no resend requests
 
+===================================================================================================
+===================================================================================================
+version 0.9.25  (stage_9_esp4.4.1):
+  - when board connected with cable to any power source and power button is pressed, 
+    led goes red.
+    repower board can happen now with 2 possibilities:
+        1 - reconnect cable (worked till now)
+	2 - press again power button
+  - removing several prints which disturb the application get type9 when working with uart
+===================================================================================================
 
 ===================================================================================================
 version 0.9.24  (stage_9_esp4.4.1):

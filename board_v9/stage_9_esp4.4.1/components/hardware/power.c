@@ -137,7 +137,7 @@ esp_err_t power_state(power_state_t state)
 		    (BT_COMMUNICATION_DETECTED == manager_send_last_comm()) &&
 			(get_system_idle_flag()==true)                             )
         {
-            ets_printf("BT off, power button was pressed\r\n");
+            ets_printf("power button was pressed\r\n");
 			//waiting for any communication in order to power off
             while ( (false == is_uart_connect())                &&
                     (BT_ENABLED_AND_CONNECTED != bt_get_state()) )
@@ -253,12 +253,47 @@ esp_err_t power_state(power_state_t state)
             ESP_ERROR_LOG(bt_toggle(BT_DISABLE));
         }
 
-        ets_printf("Board in charging - cannot be turnned off, will stuck in while1 loop\r\n");
-        ets_printf("Reconnect the cable to activate the board again\r\n");
+        ets_printf("\r\nBoard in charging mode - reconnect cable or press again the button will lead to device restart\r\n");
+        vTaskDelay(1000);
 
+        uint64_t time_after_power_button_pressed = 0;
+        bool stable_button_flag_after_power_button_pressed = true;
         while (1)
         {
-            vTaskDelay(1000);
+            /***********************************************************/
+            // check if power key is pressed
+            /***********************************************************/
+            if (KEY_PRESSED == gpio_get_level(GPIO_PWR_KEY))
+            {
+                /*******************************************************/
+                // get time
+                /*******************************************************/
+                time_after_power_button_pressed = esp_timer_get_time();
+
+                /*******************************************************/
+                // check power key is pressed for POWER_KEY_PUSH_TIMEOUT_US seconds
+                /*******************************************************/
+                stable_button_flag_after_power_button_pressed = true;
+                while((uint64_t)((esp_timer_get_time() - time_after_power_button_pressed)) < POWER_KEY_PUSH_TIMEOUT_US)
+                {
+                    if (KEY_RELEASED == gpio_get_level(GPIO_PWR_KEY))
+                    {
+                        ESP_LOGI(TAG_PWR, "POWER-KEY RELEASED - may be distrupted signal");
+                        stable_button_flag_after_power_button_pressed = false;
+                        break;
+                    }
+                }
+                if (stable_button_flag_after_power_button_pressed==true)
+                {
+                    /*******************************************************/
+                    // reset the device
+                    /*******************************************************/   
+                    ets_printf("reset device after power off - key pressed again\r\n");
+                    ESP_ERROR_CHECK(ESP_FAIL);
+                }
+            }
+
+            vTaskDelay(100);
         }
     }
 
@@ -355,6 +390,7 @@ static void power_key_task_L(void *arg)
         {
             vTaskDelete(task_handle);
         }
+
         /***********************************************************/
         // check if power key is pressed
         /***********************************************************/
