@@ -124,12 +124,32 @@ esp_err_t led_init(void)
 }
 
 /****************************************************************//**
+ * @brief   turn on white led for power off indicator and 100 precents board
+ * @param   none
+ * @return  none
+ *******************************************************************/
+void set_led_power_off_100_precents_light(void)
+{
+    if (app_wants_colors==false)
+    {
+        reset_color_led();
+        return;
+    }
+    IO_EXPANDER_write(IO_EXP_RED_LED_MASK|IO_EXP_GREEN_LED_MASK|IO_EXP_BLUE_LED_MASK,LEDS_CTRL);
+}
+
+/****************************************************************//**
  * @brief   turn on red led for power off indicator
  * @param   none
  * @return  none
  *******************************************************************/
 void set_led_power_off_light(void)
 {
+    if (app_wants_colors==false)
+    {
+        reset_color_led();
+        return;
+    }
     IO_EXPANDER_write(IO_EXP_RED_LED_MASK,LEDS_CTRL);
 }
 

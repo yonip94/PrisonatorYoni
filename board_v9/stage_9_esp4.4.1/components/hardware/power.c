@@ -28,6 +28,7 @@
 #include "io_expander_pcal6408a.h"
 #include "esp_sleep.h"
 #include "stop_actions.h"
+#include "battery.h"
 
 /*******************************************************************/
 /*******************************************************************/
@@ -258,8 +259,18 @@ esp_err_t power_state(power_state_t state)
 
         uint64_t time_after_power_button_pressed = 0;
         bool stable_button_flag_after_power_button_pressed = true;
+        uint8_t battery_precents_on_charging = BATTERY_getPercentage();
         while (1)
         {
+            //kill bt when powering off
+            if (ESP_OK!=bt_uinit())
+            {
+                //ets_printf("Failed to uinit bt\r\n",esp_timer_get_time());
+
+                //make the board at least to be invisible on devices lists if uinit failed
+                esp_bt_gap_set_scan_mode(ESP_BT_NON_CONNECTABLE, ESP_BT_NON_DISCOVERABLE);
+            }
+
             /***********************************************************/
             // check if power key is pressed
             /***********************************************************/
@@ -292,7 +303,38 @@ esp_err_t power_state(power_state_t state)
                     ESP_ERROR_CHECK(ESP_FAIL);
                 }
             }
+            
+            battery_precents_on_charging = BATTERY_getPercentage();
+            //ets_printf("battery precents = %u\r\n",(battery_precents_on_charging&0x7F));
+			//ets_printf("battery voltage mV = %u\r\n",BATTERY_getVoltage());
 
+            //measurement of battery precents is not directly from precents register
+            if((battery_precents_on_charging&0x80) == 0x80)
+            {
+                if (BATTERY_getVoltage()>=BATTERY_FULL_CHARGE_VOLTAGE_MV)
+                {
+                    set_led_power_off_100_precents_light(); 
+                }
+                else
+                {
+                    set_led_power_off_light(); 
+                }
+            }
+
+            //measurement of battery precents is directly from precents register
+            else
+            {
+                if((battery_precents_on_charging!=BATTERY_ERR_VALUE) &&
+                   (battery_precents_on_charging>=0x64))
+                {
+                    set_led_power_off_100_precents_light(); 
+                }
+                else
+                {
+                    set_led_power_off_light(); 
+                }
+            }
+            
             vTaskDelay(100);
         }
     }

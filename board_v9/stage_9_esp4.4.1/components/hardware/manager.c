@@ -1392,7 +1392,9 @@ static void manager_task_L(void *arg)
     int16_t bat_current = 0;
     uint16_t bat_voltage = 0;
     uint16_t bat_remaining_capacity = 0;
-
+    #ifdef DELIVER_BAT_TEMPERATURE
+        int16_t bat_temperature = 0;
+    #endif
     float baro_pressure = 0;
     float baro_temperature = 0;
     uint64_t mmc_set_time = 0;
@@ -1945,12 +1947,18 @@ static void manager_task_L(void *arg)
             bat_voltage = BATTERY_getVoltage();
             bat_current = BATTERY_getCurrent();
             bat_remaining_capacity = BATTERY_getRemainingCapacity();
+            #ifdef DELIVER_BAT_TEMPERATURE
+                bat_temperature = (int16_t)((100.0)*BATTERY_getTemperature());
+            #endif
             //printf("bat_current = 0x%04X\r\n",bat_current);
+            //printf("bat_temperature = %d\r\n",bat_temperature);
 
             memcpy(packet_to_deliver+PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+2,&bat_voltage,2);
             memcpy(packet_to_deliver+PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+4,&bat_current,2);//640 639
             memcpy(packet_to_deliver+PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+6,&bat_remaining_capacity,2);
-
+            #ifdef DELIVER_BAT_TEMPERATURE
+				memcpy(packet_to_deliver+PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+8,&bat_temperature,2);
+			#endif
             //printf("[%u] = %02X\r\n",(PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+2),  packet_to_deliver[PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+2]);
             //printf("[%u] = %02X\r\n",(PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+2+1),packet_to_deliver[PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+2+1]);
 

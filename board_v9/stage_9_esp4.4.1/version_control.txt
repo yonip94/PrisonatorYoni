@@ -19,6 +19,34 @@ Each version should pass the following tests before it can be released:
 5. During long navigation (10 minutes) there are no packet losses and no resend requests
 
 ===================================================================================================
+version 0.9.27  (stage_9_esp4.4.1):
+  - give indication that the board is fully charged, by white light instead of red when on charging
+    state.
+  - fix bug that when app request no led indicator - so even when on charging while on the same running time
+    led indicator will not appear.
+  - when board in charging and should be powered off - make sure bt is uinit so less consumption will
+    take occurred and board will not exposed itself on bt list
+  - fix intensities usage of bt tx power min and max ranges, before ble range which may not affect used
+    allowing to configure the ranges using type CHANGE_BT_INTENSITY_RANGE_TYPE and the next 2 
+    bytes should contain number value between 0 to 7 per each:
+    [1] is min 
+    [2] is max
+    make sure that:
+    buff[1] <= buff[2], and buff[2]<=7.
+    0 => Corresponding to -12dbm 
+    1 => Corresponding to  -9dbm 
+    2 => Corresponding to  -6dbm 
+    3 => Corresponding to  -3dbm 
+    4 => Corresponding to   0dbm 
+    5 => Corresponding to  +3dbm 
+    6 => Corresponding to  +6dbm 
+    7 => Corresponding to  +9dbm 
+  - adding bat temperature - int16 to PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+8 offset (2 bytes) 
+    to parse it - just divide by 100 the result, unit is celsius
+    * invalid value = INITIAL_TEMPERATURE_VALUE*100
+===================================================================================================
+
+===================================================================================================
 version 0.9.26  (stage_9_esp4.4.1):
   - adding aes support
   - adding uinit bt:

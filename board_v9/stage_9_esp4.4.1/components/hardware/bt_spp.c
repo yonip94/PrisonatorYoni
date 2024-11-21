@@ -44,13 +44,42 @@
 #define DEVICE_NAME     ("PRISONATOR")
 #define SPP_DATA_LEN    (ESP_SPP_MAX_MTU)
 
-#define NONE_CLOSED_BT_COMMUNICATION                ((uint8_t)(0x00))
+#define NONE_CLOSED_BT_COMMUNICATION    ((uint8_t)(0x00))
+
+//ESP_PWR_LVL_N12 = 0,                /*!< Corresponding to -12dbm */
+//ESP_PWR_LVL_N9  = 1,                /*!< Corresponding to  -9dbm */
+//ESP_PWR_LVL_N6  = 2,                /*!< Corresponding to  -6dbm */
+//ESP_PWR_LVL_N3  = 3,                /*!< Corresponding to  -3dbm */
+//ESP_PWR_LVL_N0  = 4,                /*!< Corresponding to   0dbm */
+//ESP_PWR_LVL_P3  = 5,                /*!< Corresponding to  +3dbm */
+//ESP_PWR_LVL_P6  = 6,                /*!< Corresponding to  +6dbm */
+//ESP_PWR_LVL_P9  = 7,                /*!< Corresponding to  +9dbm */
+
+//ESP_PWR_LVL_N12 (-12dbm) 0
+//ESP_PWR_LVL_N0  (0dbm)   4
+//ESP_PWR_LVL_P9  (9dbm)   9
+
+//uncomment - to set bt tx power range on the beggining to the desired lvl
+//comment - to remain with the defaults bt tx power intensity (4 to 5 => 0 to 3dbm)
+//#define BT_POWER_ON_START  
+
+#ifdef BT_POWER_ON_START
+    //define the min and max values on the way: min<=max && max<=ESP_PWR_LVL_P9
+    #define BT_POWER_ON_START_MIN_VAL       ((esp_power_level_t)(ESP_PWR_LVL_P9))
+    #define BT_POWER_ON_START_MAX_VAL       ((esp_power_level_t)(ESP_PWR_LVL_P9))
+#endif
 
 /*******************************************************************/
 /*******************************************************************/
 /*               TYPES & LOCAL VARIABLES & CONSTANTS               */
 /*******************************************************************/
 /*******************************************************************/
+static esp_power_level_t current_bt_classic_min_power = ESP_PWR_LVL_N0;//default values
+static esp_power_level_t current_bt_classic_max_power = ESP_PWR_LVL_P3;//default values
+static esp_power_level_t desired_bt_classic_min_power = ESP_PWR_LVL_N0;
+static esp_power_level_t desired_bt_classic_max_power = ESP_PWR_LVL_P3;
+static bool is_bt_classic_tx_powers_known = false;
+
 static bt_state_t bt_state = BT_DISABLED;
 static const esp_spp_mode_t esp_spp_mode = ESP_SPP_MODE_CB;
 static const esp_spp_sec_t sec_mask = ESP_SPP_SEC_NONE;
@@ -81,6 +110,7 @@ static bool ble_mem_released = false;
 static void esp_spp_cb_L(esp_spp_cb_event_t event, esp_spp_cb_param_t *param);
 static void esp_bt_gap_cb_L(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param);
 static esp_err_t bt_init_L(void);
+static esp_err_t set_desired_bt_tx_power_L(void);
 
 /*******************************************************************/
 /*******************************************************************/
@@ -176,6 +206,13 @@ esp_err_t bt_init(void)
         //already bt initialized
         return(ESP_OK);
     }
+
+    #ifdef BT_POWER_ON_START
+        if (manager_send_packet_sn()==0)
+        {
+            set_desired_bt_tx_power_range((uint8_t)BT_POWER_ON_START_MIN_VAL,(uint8_t)BT_POWER_ON_START_MAX_VAL);
+        }
+    #endif
 
     /***************************************************************/
     // init connectionHandle
@@ -304,6 +341,11 @@ esp_err_t bt_send_data(uint8_t* bt_data, uint32_t size)
     if (is_bt_initialized == false)
     {
         return(ESP_FAIL);
+    }
+
+    if (ESP_OK!=set_desired_bt_tx_power_L())
+    {
+        ets_printf("failed to change bt tx power");
     }
 
     /***************************************************************/
@@ -683,6 +725,23 @@ void set_bt_calib_2d_arr_loc(uint8_t i, uint8_t j)
 void set_bt_mag_calib_2d_arr_loc(uint8_t i, uint8_t j)
 {
     bt_mag_calib_parts_2d_arr[i][j]=0x01;
+}
+
+/****************************************************************//**
+ * @brief   set the min and max intensities of bt classic tx power
+ * @note    the function will check min<=max and max<=ESP_PWR_LVL_P9 which its 7
+ * @param   [IN] min_val - min range
+ * @param   [IN] max_val - max range
+ * @return  none
+ *******************************************************************/
+void set_desired_bt_tx_power_range(uint8_t min_val, uint8_t max_val)
+{
+    if ((min_val  <= max_val) &&
+        (max_val  <= (uint8_t)ESP_PWR_LVL_P9))
+    {
+        desired_bt_classic_min_power = (esp_power_level_t)(min_val);
+        desired_bt_classic_max_power = (esp_power_level_t)(max_val);
+    }
 }
 
 /*******************************************************************/
@@ -1129,7 +1188,6 @@ static void esp_spp_cb_L(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
                 set_ack_nack_to_rand1(bt_read_buff[AES_APP_RAND1_ACK_NACK_RES_LOC]);
             }
 
-
             else if ((bt_read_buff[PACKET_OFFSET_TYPE]==AES_APP_ID_TYPE) &&
                     (bt_read_size == AES_SEED_TOTAL_SIZE)  ) 
             {
@@ -1146,6 +1204,12 @@ static void esp_spp_cb_L(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
                     (bt_read_size == (1+AES_APP_RAND_ENCRYPTED_NUM_SIZE))  ) 
             {
                 set_app_rand2_encrypted_value_before_calibration((bt_read_buff+AES_APP_RAND2_NUM_ENCRYPTED_START_BYTE));
+            }
+
+            else if ((bt_read_buff[BT_INTENSITY_TYPE_START_BYTE]==CHANGE_BT_INTENSITY_RANGE_TYPE) &&
+                     (bt_read_size == BT_INTENSITY_TYPE_TOTAL_SIZE)  ) 
+            {
+                set_desired_bt_tx_power_range((bt_read_buff[MIN_BT_POWER_TX_START_BYTE]),(bt_read_buff[MAX_BT_POWER_TX_START_BYTE]));
             }
 
             else
@@ -1210,8 +1274,13 @@ static void esp_spp_cb_L(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
             //ets_printf("11\r\n");
             ESP_LOGI(TAG_BT, "ESP_SPP_SRV_OPEN_EVT");
             connectionHandle = param->srv_open.handle;
+            
+            if (ESP_OK!=set_desired_bt_tx_power_L())
+            {
+                ets_printf("failed to change bt tx power");
+            }
             bt_state = BT_ENABLED_AND_CONNECTED;
-            ESP_ERROR_LOG(esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_N12));
+
             break;
         }
         case ESP_SPP_SRV_STOP_EVT:
@@ -1528,4 +1597,88 @@ static esp_err_t bt_init_L(void)
     ESP_ERROR_LOG(esp_bt_gap_set_pin(pin_type, 0, pin_code));
 
     return ESP_OK;
+}
+
+/****************************************************************//**
+ * @brief   Set bt and ble intensity according to the desired request from APP
+ *          this function first checks if changing the intensity is needed, than chnge and after check if succeed
+
+ * @param   none
+ * @return  ESP_OK on success or ESP_ERR_[ERROR] otherwise
+ *******************************************************************/
+static esp_err_t set_desired_bt_tx_power_L(void)
+{
+    if (is_bt_classic_tx_powers_known == true)
+    {
+        if ((current_bt_classic_min_power==desired_bt_classic_min_power) && 
+            (current_bt_classic_max_power==desired_bt_classic_max_power)   )
+        {
+            return(ESP_OK); 
+        }
+    }
+
+    esp_power_level_t tmp_bt_tx_min_power = ESP_PWR_LVL_P7;
+    esp_power_level_t tmp_bt_tx_max_power = ESP_PWR_LVL_P7;
+
+    if (ESP_OK!=esp_bredr_tx_power_get(&tmp_bt_tx_min_power,&tmp_bt_tx_max_power))
+    {
+        ets_printf("failed to get bt power\r\n");
+        return(ESP_FAIL);
+    }
+    else
+    {
+        if ((tmp_bt_tx_min_power == desired_bt_classic_min_power) &&
+            (tmp_bt_tx_max_power == desired_bt_classic_max_power)   )
+        {
+            ets_printf("bt classic power - already as desired min power = %u, max power = %u\r\n",(uint8_t)tmp_bt_tx_min_power,(uint8_t)tmp_bt_tx_max_power);
+            
+            current_bt_classic_min_power = desired_bt_classic_min_power;
+            current_bt_classic_max_power = desired_bt_classic_max_power;
+            is_bt_classic_tx_powers_known = true;
+            return(ESP_OK);
+        }
+        else
+        {
+            ets_printf("before set bt classic power - min power = %u, max power = %u\r\n",(uint8_t)tmp_bt_tx_min_power,(uint8_t)tmp_bt_tx_max_power);
+            
+            //its not ble - so not so much important
+            if (ESP_OK!=esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV,desired_bt_classic_max_power))
+            {
+                ets_printf("failed to get ble power\r\n");
+            }
+
+            if (ESP_OK!=esp_bredr_tx_power_set(desired_bt_classic_min_power,desired_bt_classic_max_power))
+            {
+                ets_printf("failed to set bt classic power\r\n");
+                return(ESP_FAIL);
+            }
+        }
+    }
+
+    tmp_bt_tx_min_power = ESP_PWR_LVL_P7;
+    tmp_bt_tx_max_power = ESP_PWR_LVL_P7;
+    if (ESP_OK!=esp_bredr_tx_power_get(&tmp_bt_tx_min_power,&tmp_bt_tx_max_power))
+    {
+        ets_printf("failed to get bt classic power for validation\r\n");
+        return(ESP_FAIL);
+    }
+
+    else
+    {
+        ets_printf("after set bt classic power - min power = %u, max power = %u\r\n",(uint8_t)tmp_bt_tx_min_power,(uint8_t)tmp_bt_tx_max_power);
+        if ((tmp_bt_tx_min_power == desired_bt_classic_min_power) &&
+            (tmp_bt_tx_max_power == desired_bt_classic_max_power)   )
+        {
+            current_bt_classic_min_power = desired_bt_classic_min_power;
+            current_bt_classic_max_power = desired_bt_classic_max_power;
+            is_bt_classic_tx_powers_known = true;
+            return(ESP_OK);
+        }
+        else
+        {
+            return(ESP_FAIL);
+        }
+    
+    }
+    return(ESP_FAIL);
 }

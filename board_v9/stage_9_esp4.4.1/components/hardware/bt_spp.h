@@ -59,4 +59,5 @@ void set_bt_mag_calib_2d_arr_loc(uint8_t i, uint8_t j);
 uint8_t get_bt_close_connection_reason(void);
 void calc_bt_data_to_deliver_to_other_side(void);
 void send_bt_data_to_deliver_to_other_side(void);
+void set_desired_bt_tx_power_range(uint8_t min_val, uint8_t max_val);
 #endif /* _BT_SPP_H_ */

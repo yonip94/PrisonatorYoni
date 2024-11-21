@@ -9,7 +9,7 @@ cmake_minimum_required(VERSION 3.5)
 #If not set it will be set to the git version:
 #   The hex numbers are the git commit your project is on. 
 #   The -dirty indicates the source code has been changed since that commit was done
-set(PROJECT_VER "0.9.26") 
+set(PROJECT_VER "0.9.27") 
 
 #set(COMPONENTS hardware icm42688 main esptool_py)
 #set(COMPONENTS hardware icm42688 main AHRS esptool_py)

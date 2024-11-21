@@ -41,10 +41,10 @@
 #define LOW_LIMIT_PRECENTS                          ((uint32_t)(40))
 
 #define BATTERY_MAX_VOLTAGE_MV                      ((uint16_t)(4032))
- 
+
+#define INITIAL_TEMPERATURE_VALUE                   ((double)(100.0))
 #define INITIAL_PARAMETER_VALUE                     ((uint16_t)(0xffff))
 #define INITIAL_CURRENT_PARAMETER_VALUE             ((int16_t)(0x8000))
-#define BATTERY_ERR_VALUE                           ((uint8_t)(0x7F))      /* A false valuse to return in case of an error */
 #define MAX_BATTERY_VALUE_MV                        ((uint32_t)(12000))
 #define MIN_BATTERY_VALUE_MV                        ((uint32_t)(0)) 
 
@@ -83,6 +83,9 @@
 
 #define BATTERY_PRECENTS_TAKEN_FROM_VOLTS_READ_MASK ((uint8_t)0x80)
 
+#define KELVIN_CONSTANT                             ((double)(273.15)) 
+#define TEMPERATURE_RESULT_DIV_FACTOR               ((double)(10.0)) 
+
 /*******************************************************************/
 /*******************************************************************/
 /*               TYPES & LOCAL VARIABLES & CONSTANTS               */
@@ -93,6 +96,7 @@ static uint8_t battery_percentage_g = (uint8_t)(MAX_BATTERY_PRECENTS);
 static uint16_t battery_voltage = INITIAL_PARAMETER_VALUE;
 static int16_t battery_current = INITIAL_CURRENT_PARAMETER_VALUE;
 static uint16_t remaining_capacity = INITIAL_PARAMETER_VALUE;
+static double battery_temperature = INITIAL_TEMPERATURE_VALUE;
 
 /*******************************************************************/
 /*******************************************************************/
@@ -200,6 +204,17 @@ uint16_t BATTERY_getRemainingCapacity(void)
     return (remaining_capacity);
 }
 
+/****************************************************************//**
+ * @brief   Get Battery temperature
+ * 
+ * @param   none
+ * @return  Battery temperature[celsius]
+ *******************************************************************/
+double BATTERY_getTemperature(void)
+{
+    return (battery_temperature);
+}
+
 /*******************************************************************/
 /*******************************************************************/
 /*                 LOCAL FUNCTIONS IMPLEMENTATION                  */
@@ -225,10 +240,10 @@ static void battery_task_L(void *arg)
     //xLastWakeTime = xTaskGetTickCount();
     for (;;)
     {
-        if (get_board_stop_any_operation()==true)
-        {
-            vTaskDelete(task_handle);
-        }
+        //if (get_board_stop_any_operation()==true)
+        //{
+        //    vTaskDelete(task_handle);
+        //}
 
         /***********************************************************/
         // read battery data
@@ -239,6 +254,7 @@ static void battery_task_L(void *arg)
             battery_voltage = INITIAL_PARAMETER_VALUE;
             battery_current = INITIAL_CURRENT_PARAMETER_VALUE;
             remaining_capacity = INITIAL_PARAMETER_VALUE;
+			battery_temperature = INITIAL_TEMPERATURE_VALUE;
 
             if (manager_send_last_comm()!=UART_COMMUNICATION_DETECTED)
             {
@@ -275,9 +291,6 @@ static esp_err_t battery_readData_L(void)
     uint8_t remain_time_to_discharge_lsb=0x00;
     uint8_t remain_time_to_discharge_msb=0x00;
 
-    uint8_t temperature_lsb=0x00;
-    uint8_t temperature_msb=0x00;
-
     uint8_t at_rate_lsb=0x00;
     uint8_t at_rate_msb=0x00;
     */
@@ -289,14 +302,6 @@ static esp_err_t battery_readData_L(void)
     {
         ets_printf("status_read_lsb = 0x%02X\r\n",status_read_lsb);
         ets_printf("status_read_msb = 0x%02X\r\n",status_read_msb); 
-    }
-
-    ESP_ERROR_LOG(i2c_xfer_read_reg(IOEXP_BARO_BAT_MMC_I2C_CHANNEL_PORT, BATTERY_DEVICE_I2C_ADDRESS, BATTERY_TEMPERATURE_ADD_MSB, &temperature_lsb,1000));
-    ESP_ERROR_LOG(i2c_xfer_read_reg(IOEXP_BARO_BAT_MMC_I2C_CHANNEL_PORT, BATTERY_DEVICE_I2C_ADDRESS, BATTERY_TEMPERATURE_ADD_LSB, &temperature_msb,1000));
-    if (manager_send_last_comm()!=UART_COMMUNICATION_DETECTED)
-    {
-        ets_printf("temperature_lsb = 0x%02X\r\n",temperature_lsb);
-        ets_printf("temperature_msb = 0x%02X\r\n",temperature_msb); 
     }
 
     ESP_ERROR_LOG(i2c_xfer_read_reg(IOEXP_BARO_BAT_MMC_I2C_CHANNEL_PORT, BATTERY_DEVICE_I2C_ADDRESS, BATTERY_CURRENT_REG_ADD_LSB, &current_read_lsb,1000));
@@ -332,7 +337,20 @@ static esp_err_t battery_readData_L(void)
         ets_printf("at_rate_msb = 0x%02X\r\n",at_rate_msb); 
     }
     */
-    
+
+    uint8_t temperature_lsb=0x00;
+    uint8_t temperature_msb=0x00;
+    if (ESP_OK!=i2c_xfer_read_reg(IOEXP_BARO_BAT_MMC_I2C_CHANNEL_PORT, BATTERY_DEVICE_I2C_ADDRESS, BATTERY_TEMPERATURE_ADD_MSB, &temperature_lsb,1000))
+    {
+        return ESP_FAIL;
+    }
+    if (ESP_OK!=i2c_xfer_read_reg(IOEXP_BARO_BAT_MMC_I2C_CHANNEL_PORT, BATTERY_DEVICE_I2C_ADDRESS, BATTERY_TEMPERATURE_ADD_LSB, &temperature_msb,1000))
+    {
+        return ESP_FAIL;
+    }
+    battery_temperature = ((double)((uint16_t)((uint16_t)(temperature_lsb)<<8) | (uint16_t)(temperature_msb))/TEMPERATURE_RESULT_DIV_FACTOR)-KELVIN_CONSTANT;
+    //printf("battery_temperature val reg data = 0x%04X\r\n",((uint16_t)((uint16_t)(temperature_lsb)<<8) | (uint16_t)(temperature_msb)));
+
     uint8_t current_read_lsb=0x00;
     uint8_t current_read_msb=0x00;
     if (ESP_OK!=i2c_xfer_read_reg(IOEXP_BARO_BAT_MMC_I2C_CHANNEL_PORT, BATTERY_DEVICE_I2C_ADDRESS, BATTERY_CURRENT_REG_ADD_MSB, &current_read_msb,1000))
@@ -421,6 +439,7 @@ static esp_err_t battery_readData_L(void)
         printf("battery_current val = 0x%04X = %d[mA]\r\n",battery_current,battery_current);
         printf("battery_remaining_capacity val = 0x%04X = %u[mAh]\r\n",remaining_capacity,remaining_capacity);
         printf("battery_percentage_g val = 0x%02X = %u[precents]\r\n",battery_percentage_g,battery_percentage_g);
+        printf("battery_temperature val = %.05f[celsius]\r\n",battery_temperature);
     #endif
     
     /***************************************************************/
@@ -475,7 +494,6 @@ static esp_err_t battery_readData_L(void)
         battery_percentage_g = (uint8_t)(((((1.0)*(LOW_LIMIT_PRECENTS-MIN_BATTERY_PRECENTS))*(battery_voltage-BATTERY_MAX_ALLOWED_VOLTAGE_MV))/(BATTERY_LOW_REFF_VOLTAGE_MV_START_POINT-BATTERY_MAX_ALLOWED_VOLTAGE_MV)));
         battery_percentage_g = battery_percentage_g | BATTERY_PRECENTS_TAKEN_FROM_VOLTS_READ_MASK;
     }
-	
 	
     //if (manager_send_last_comm()!=UART_COMMUNICATION_DETECTED)
     //{

@@ -39,7 +39,7 @@
 //11 - testing hardcoded numbers on main program                           v
 //12 - perform hmac with sha256 func with unique id & data key on blk2     v
 //13 - generate (32bytes) random numbers                                   v
-//#define AES_DEBUG 13
+//#define AES_DEBUG 2
 
 #ifdef AES_DEBUG
     //choose number of 32 bytes rng generates on test 13
@@ -65,9 +65,20 @@
 //#define AES_USAGE_UART
 
 /*******************************************************************/
+//uncomment - to deliver bat temperature
+//comment -   to not deliver bat temperature
+/*******************************************************************/
+//#define DELIVER_BAT_TEMPERATURE
+
+/*******************************************************************/
 //test the project with uart - without need to use app, but by keyboard
 /*******************************************************************/
 //#define UART_KEYBOARD_DEBUG
+
+/*******************************************************************/
+//uncomment - to perform test of writing calibration data as on the buffer temp_calib
+/*******************************************************************/
+//#define SAVE_SPECIFIC_CAL_DATA_DEBUG
 
 /*******************************************************************/
 //in case of testing system during long time, uncomment
@@ -368,7 +379,7 @@ typedef enum{
 #define WHOLE_PACKET_TYPE_VAL_RESEND_ACK        (0x06)
 #define SHORT_PACKET_TYPE_VAL_RESEND_ACK        (0x0A)
 #define CONNECTION_MODE_READY_FROM_PHONE_VALUE  (0x0B)
-
+#define CHANGE_BT_INTENSITY_RANGE_TYPE          (0x20)
 #define PACKET_TYPE_KEY_CODE					(0x0F)
 
 #define PACKET_TYPE_VAL_IDLE                 (0x07)
@@ -573,6 +584,17 @@ typedef enum{
 #define KEY_CODE_SIZE 					((uint32_t)32)
 
 #define KEY_CODE_TOTAL_SIZE 			((uint32_t)(KEY_CODE_SIZE+KEY_CODE_TYPE_SIZE))
+
+/*******************************************************************/
+/* BT INTENSITY                                                    */
+/*******************************************************************/
+#define BT_INTENSITY_TYPE_START_BYTE       ((uint32_t)(0))
+#define BT_INTENSITY_TYPE_SIZE             ((uint32_t)(1))
+#define MIN_BT_POWER_TX_START_BYTE         ((uint32_t)(BT_INTENSITY_TYPE_START_BYTE + BT_INTENSITY_TYPE_SIZE))
+#define MIN_BT_POWER_TX_SIZE               ((uint32_t)(1))
+#define MAX_BT_POWER_TX_START_BYTE         ((uint32_t)(MIN_BT_POWER_TX_START_BYTE + MIN_BT_POWER_TX_SIZE))
+#define MAX_BT_POWER_TX_SIZE               ((uint32_t)(1))
+#define BT_INTENSITY_TYPE_TOTAL_SIZE       ((uint32_t)(BT_INTENSITY_TYPE_SIZE+MIN_BT_POWER_TX_SIZE+MAX_BT_POWER_TX_SIZE))
 
 /*******************************************************************/
 /* GENERAL                                                         */

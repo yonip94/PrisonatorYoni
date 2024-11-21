@@ -73,6 +73,7 @@ esp_err_t ACTIVATE_LED_task_start(void);
 void set_board_led_flags(void);
 void reset_board_led_flags(void);
 void set_led_power_off_light(void);
+void set_led_power_off_100_precents_light(void);
 
 #ifdef FAULT_BOARD_LEDS_DEBUG
     esp_err_t FAULTS_task_start(void);

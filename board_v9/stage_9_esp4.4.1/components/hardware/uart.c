@@ -35,6 +35,7 @@
 #include "checksum_calc.h"
 #include "power.h"
 #include "stop_actions.h"
+#include "bt_spp.h"
 
 /*******************************************************************/
 /*******************************************************************/
@@ -1215,6 +1216,16 @@ static void uart_get_task_L(void *arg)
 								ets_printf("unexpected crashes lead to resets are allowed - default\r\n");
 		                        set_on_respond_to_reset_cases();
 		                    }
+
+                            else if ( (uart_rx_buf[PACKET_OFFSET_TYPE] == 'o') ||
+                                      (uart_rx_buf[PACKET_OFFSET_TYPE] == 'O')   )//debug changing bt intensity when connected
+                            {
+                                if (uart_rx_buf[BT_INTENSITY_TYPE_START_BYTE]==CHANGE_BT_INTENSITY_RANGE_TYPE) 
+                                {
+                                    ets_printf("changing bt intensity when connected\r\n");
+                                    set_desired_bt_tx_power_range((uart_rx_buf[MIN_BT_POWER_TX_START_BYTE]),(uart_rx_buf[MAX_BT_POWER_TX_START_BYTE]));
+                                }
+                            }
 					
                         #endif
 
@@ -1407,6 +1418,15 @@ static void uart_get_task_L(void *arg)
                         break;
                     }
                 
+                    case (BT_INTENSITY_TYPE_TOTAL_SIZE):
+                    {
+                        if (uart_rx_buf[BT_INTENSITY_TYPE_START_BYTE]==CHANGE_BT_INTENSITY_RANGE_TYPE) 
+                        {
+                            set_desired_bt_tx_power_range((uart_rx_buf[MIN_BT_POWER_TX_START_BYTE]),(uart_rx_buf[MAX_BT_POWER_TX_START_BYTE]));
+                        }
+                        break;
+                    }
+
                     case(1+AES_APP_RAND_NUM_SIZE)://AES_SEED_TOTAL_SIZE=1+AES_APP_RAND_NUM_SIZE so insert set_app_id_before_calibration here
                     {
                         if (uart_rx_buf[PACKET_OFFSET_TYPE] == AES_APP_ID_TYPE)
