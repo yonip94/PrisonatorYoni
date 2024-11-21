@@ -19,6 +19,21 @@ Each version should pass the following tests before it can be released:
 5. During long navigation (10 minutes) there are no packet losses and no resend requests
 
 ===================================================================================================
+version 0.9.30  (stage_9_esp4.4.1):
+  - remove rs232 pwr enable (gpio17) which is not used and was missed on the code
+    since board version 9 was released.
+    * gpio17 was also belong to sync io - this remain
+  - adding support of indication of board on charging and deliver the data on user packet byte 750 (PACKET_OFFSET_PULSE_VAL)
+    mask 0x04 - battery on charge shows this
+    mask 0x08 - no battery installed + cable connected shows this at most
+    mask 0x10 - no battery installed + cable connected may show this also
+    mask 0x20 - battery installed but board disconnected from power (not on charge)
+  - reminder
+    mask 0x01 - nav fail indicator 
+    mask 0x02 - resend packets on going
+===================================================================================================
+
+===================================================================================================
 version 0.9.29  (stage_9_esp4.4.1):
   - remove all code warnings
 ===================================================================================================

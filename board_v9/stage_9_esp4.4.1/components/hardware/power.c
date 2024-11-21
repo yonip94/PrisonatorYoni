@@ -36,12 +36,17 @@
 /*******************************************************************/
 /*******************************************************************/
 #define GPIO_PWR_KEY                GPIO_NUM_36 //Push button key
-#define GPIO_RS232_PWR_EN           GPIO_NUM_17 //Enable RS232
+#define GPIO_ACOK                   (GPIO_NUM_34) 
+#define GPIO_CHGOK                  (GPIO_NUM_38) 
+
+
+#define GPIO_CHGOK_NTC_FAULT_FREQ             ((uint32_t)6)
+#define GPIO_CHGOK_NTC_FAULT_PERIOD           ((float)(1.0/GPIO_CHGOK_NTC_FAULT_FREQ))
+#define SAMPLES_NUMBER_OF_PINS_ACOK_CHGOK     ((uint32_t)10) //1000ms duration / 100ms task period
 
 #define POWER_KEY_PUSH_TIMEOUT_US   ((uint64_t)(50000))
 #define POWER_UP_DELAY_MS           ((uint64_t)(3000)) /* less then this and the system is not stable
-                                            and we get packet losses */
-
+                                                          and we get packet losses */
 /* key states */
 typedef enum{
     KEY_PRESSED  = 0,
@@ -53,6 +58,13 @@ static TaskHandle_t task_handle;
 static uint8_t power_off_flag=0;
 static bool board_stop_any_operation = false;
 static uint8_t power_off_cause=POWER_OFF_NOT_HAPPENS;
+
+static uint8_t acok_val  = DETECTED_AS_UNKNOWN;
+static uint8_t chgok_val = DETECTED_AS_UNKNOWN;
+
+static uint8_t chgok_samples[SAMPLES_NUMBER_OF_PINS_ACOK_CHGOK] = {DETECTED_AS_UNKNOWN};
+static uint8_t acok_samples[SAMPLES_NUMBER_OF_PINS_ACOK_CHGOK] = {DETECTED_AS_UNKNOWN};
+static uint32_t measurement_index = 0;
 
 /*******************************************************************/
 /*******************************************************************/
@@ -66,6 +78,34 @@ static void power_key_task_L(void *arg);
 /*              INTERFACE FUNCTIONS IMPLEMENTATION                 */
 /*******************************************************************/
 /*******************************************************************/
+charging_mode_t get_charging_mode_status(void)
+{
+    if ((acok_val  == DETECTED_AS_OFF) && 
+        (chgok_val == DETECTED_AS_OFF)   )
+    {
+        return(BOARD_ON_CHARGE);
+    }
+
+    else if ((acok_val  == DETECTED_AS_OFF) && 
+             (chgok_val == DETECTED_AS_ON)   )        
+    {
+        return(BOARD_END_OF_CHARGE_ISET_DISABLE_CHARGER_ONLY);
+    }
+
+    else if ((acok_val  == DETECTED_AS_OFF) && 
+             (chgok_val == DETECTED_AS_6HZ_TOGGLE)   )   
+    {
+        return(NTC_FAULT_TIMER_OUT);
+    }   
+
+    else if ((acok_val  == DETECTED_AS_ON) && 
+             (chgok_val == DETECTED_AS_ON)   )        
+    {
+        return(VIN_ABSENT_EN_DISABLED_THERMAL_SHUTDOWN);
+    }
+
+    return(BOARD_UNKNOWN_CHARGE_STATE);
+}
 
 /****************************************************************//**
  * @brief   Initialine power
@@ -75,23 +115,32 @@ static void power_key_task_L(void *arg);
  *******************************************************************/
 esp_err_t power_init(void)
 {
+    esp_err_t rc = ESP_FAIL;
+
     /***************************************************************/
     // configure the POWER-KEY GPIO
     /***************************************************************/
-    if (ESP_OK != gpio_config_setup(GPIO_PWR_KEY, GPIO_MODE_INPUT, 0, 0))
+    rc = gpio_config_setup(GPIO_PWR_KEY, GPIO_MODE_INPUT, 0, 0);
+    if (ESP_OK != rc)
     {
         ESP_LOGE(TAG_PWR, "ERROR: GPIO POWER-KEY CONFIGURATION FAILED");
-        return ESP_FAIL;
+        return rc;
     }
 
-    /***************************************************************/
-    // configure the POWER GPIO to RS232 converter
-    /***************************************************************/
-    if (ESP_OK != gpio_config_setup(GPIO_RS232_PWR_EN, GPIO_MODE_OUTPUT, 0, 0))
-    {
-        ESP_LOGE(TAG_PWR, "ERROR: GPIO POWER CONFIGURATION FAILED");
-        return ESP_FAIL;
+    rc = gpio_config_setup(GPIO_ACOK, GPIO_MODE_INPUT, GPIO_PULLUP_DISABLE, GPIO_PULLDOWN_DISABLE);
+    if (rc) {
+        ESP_LOGE(TAG_GPIO_DECODER, "FAIL TO SET GPIO NUM %d. rc=%d", GPIO_ACOK, rc);
+        return rc;
     }
+
+    rc = gpio_config_setup(GPIO_CHGOK, GPIO_MODE_INPUT, GPIO_PULLUP_DISABLE, GPIO_PULLDOWN_DISABLE);
+    if (rc) {
+        ESP_LOGE(TAG_GPIO_DECODER, "FAIL TO SET GPIO NUM %d. rc=%d", GPIO_CHGOK, rc);
+        return rc;
+    }
+
+    memset(chgok_samples,DETECTED_AS_UNKNOWN,SAMPLES_NUMBER_OF_PINS_ACOK_CHGOK);
+    memset(acok_samples,DETECTED_AS_UNKNOWN,SAMPLES_NUMBER_OF_PINS_ACOK_CHGOK);
 
     return ESP_OK;
 }
@@ -168,15 +217,6 @@ esp_err_t power_state(power_state_t state)
     else
     {
         ESP_LOGE(TAG_PWR, "ERROR: POWER STATE %d IS NOT SUPPORTED", state);
-        return ESP_FAIL;
-    }
-
-    /***************************************************************/
-    // set gpio level to RS232 converter
-    /***************************************************************/
-    if (ESP_OK != gpio_set_level(GPIO_RS232_PWR_EN, gpio_level))
-    {
-        ESP_LOGE(TAG_PWR, "ERROR: GPIO POWER SET TO RS232 FAILED");
         return ESP_FAIL;
     }
 
@@ -334,7 +374,6 @@ esp_err_t power_state(power_state_t state)
                     set_led_power_off_light(); 
                 }
             }
-            
             vTaskDelay(100);
         }
     }
@@ -352,7 +391,6 @@ bool get_board_stop_any_operation(void)
 {
     return(board_stop_any_operation);
 }
-
 
 /****************************************************************//**
  * @brief   sending out power off flag
@@ -405,7 +443,6 @@ esp_err_t power_key_task_start(void)
     return ESP_OK;
 }
 
-
 /****************************************************************//**
  * @brief   power key task
  * 
@@ -414,8 +451,11 @@ esp_err_t power_key_task_start(void)
  *******************************************************************/
 static void power_key_task_L(void *arg)
 {
+    uint32_t counter_of_changes_chgok = 0;
     uint64_t time = 0;
     bool stable_button_flag = true;
+    uint8_t acok_val_tmp  = DETECTED_AS_UNKNOWN;
+    uint8_t chgok_val_tmp = DETECTED_AS_UNKNOWN;
 
     ESP_LOGI(TAG_PWR, "START POWER-KEY TASK");
     ESP_LOGI(TAG_PWR, "POWER-KEY TASK (CORE=%d): %lld", xPortGetCoreID(),esp_timer_get_time());
@@ -431,6 +471,65 @@ static void power_key_task_L(void *arg)
         if (get_board_stop_any_operation()==true)
         {
             vTaskDelete(task_handle);
+        }
+
+        chgok_samples[measurement_index] = gpio_get_level(GPIO_CHGOK);
+        acok_samples[measurement_index]  = gpio_get_level(GPIO_ACOK);
+        measurement_index = measurement_index + 1;
+
+        if (measurement_index == SAMPLES_NUMBER_OF_PINS_ACOK_CHGOK)
+        {
+            //reset index for the next banch of samples
+            measurement_index = 0;
+
+            //take the last sample to the refferences
+            acok_val_tmp  = acok_samples[measurement_index];
+            chgok_val_tmp = chgok_samples[measurement_index];
+
+            //find acok value
+            for (uint32_t ind=1;ind<(SAMPLES_NUMBER_OF_PINS_ACOK_CHGOK);ind++)
+            {
+                if (acok_samples[ind] != acok_val_tmp)
+                {
+                    //determine both pins to be unknown if unsteady state of acok
+                    acok_val_tmp = DETECTED_AS_UNKNOWN;
+                    chgok_val_tmp = DETECTED_AS_UNKNOWN;
+                    break;
+                }
+            }
+
+            //if acok is 0 or 1 stable during 1 seconds (100ms sample)
+            if (acok_val_tmp!=DETECTED_AS_UNKNOWN)
+            {
+                //find chgok value
+                counter_of_changes_chgok = 0;
+                for (uint32_t ind=1;ind<(SAMPLES_NUMBER_OF_PINS_ACOK_CHGOK);ind++)
+                {
+                    //if chgok is not stable 
+                    if (chgok_samples[ind] != chgok_val_tmp)
+                    {
+                        counter_of_changes_chgok = counter_of_changes_chgok + 1;
+                        if (chgok_val_tmp == DETECTED_AS_ON)
+                        {
+                            chgok_val_tmp = DETECTED_AS_OFF;
+                        }
+                        else
+                        {
+                            chgok_val_tmp = DETECTED_AS_ON;
+                        }
+                    }
+                }
+
+                if (counter_of_changes_chgok>0)//(uint32_t)(1000/(166) // (2*5)
+                {
+                    chgok_val_tmp = DETECTED_AS_6HZ_TOGGLE;
+                }
+            }
+
+            acok_val  = acok_val_tmp;
+            chgok_val = chgok_val_tmp;
+            //printf("acok  value = %u\r\n",acok_val);
+            //printf("chgok value = %u\r\n",chgok_val);
         }
 
         /***********************************************************/

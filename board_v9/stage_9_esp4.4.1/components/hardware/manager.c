@@ -74,6 +74,10 @@
 
 #define NAV_FAIL_MASK                                       ((uint8_t)0x01)
 #define RESEND_ONGOING_MASK                                 ((uint8_t)0x02)
+#define BOARD_ON_CHARGE_MASK                                ((uint8_t)0x04) // battery on charge shows this
+#define BOARD_END_OF_CHARGE_ISET_DISABLE_CHARGER_ONLY_MASK  ((uint8_t)0x08) // no battery installed + cable connected shows this at most
+#define NTC_FAULT_TIMER_OUT_MASK                            ((uint8_t)0x10) // no battery installed + cable connected may show this also
+#define VIN_ABSENT_EN_DISABLED_THERMAL_SHUTDOWN_MASK        ((uint8_t)0x20) // battery installed but board disconnected from power
 
 /*******************************************************************/
 /*******************************************************************/
@@ -1423,6 +1427,7 @@ static void manager_task_L(void *arg)
     //uint64_t wait_read_flash_time = 0;
     uint64_t disconnection_time=0;
     uint64_t current_ts_ka = 0;
+    charging_mode_t board_charge_state = BOARD_UNKNOWN_CHARGE_STATE;
 
     //uint32_t build_imu_set_fail_seq_counter = 0;
     //uint32_t hard_robast_seq_failure_counter = 0;
@@ -2034,7 +2039,26 @@ static void manager_task_L(void *arg)
             {
                 packet_to_deliver[PACKET_OFFSET_PULSE_VAL] = packet_to_deliver[PACKET_OFFSET_PULSE_VAL] | RESEND_ONGOING_MASK;
             }
+
+            board_charge_state = get_charging_mode_status();
+            if (board_charge_state == BOARD_ON_CHARGE)
+            {
+                packet_to_deliver[PACKET_OFFSET_PULSE_VAL] = packet_to_deliver[PACKET_OFFSET_PULSE_VAL] | BOARD_ON_CHARGE_MASK;
+            }
+            else if (board_charge_state == BOARD_END_OF_CHARGE_ISET_DISABLE_CHARGER_ONLY)
+            {
+                packet_to_deliver[PACKET_OFFSET_PULSE_VAL] = packet_to_deliver[PACKET_OFFSET_PULSE_VAL] | BOARD_END_OF_CHARGE_ISET_DISABLE_CHARGER_ONLY_MASK;
+            }
+            else if (board_charge_state == NTC_FAULT_TIMER_OUT)
+            {
+                packet_to_deliver[PACKET_OFFSET_PULSE_VAL] = packet_to_deliver[PACKET_OFFSET_PULSE_VAL] | NTC_FAULT_TIMER_OUT_MASK;
+            }
+            else if (board_charge_state == VIN_ABSENT_EN_DISABLED_THERMAL_SHUTDOWN)
+            {
+                packet_to_deliver[PACKET_OFFSET_PULSE_VAL] = packet_to_deliver[PACKET_OFFSET_PULSE_VAL] | VIN_ABSENT_EN_DISABLED_THERMAL_SHUTDOWN_MASK;
+            }
 			
+            //printf("pulse byte location = %u = 0x%02X\r\n",PACKET_OFFSET_PULSE_VAL,packet_to_deliver[PACKET_OFFSET_PULSE_VAL]);
             //printf("nav resend ind loc = %u, nav resend ind = 0x%02X\r\n",PACKET_OFFSET_PULSE_VAL, packet_to_deliver[PACKET_OFFSET_PULSE_VAL]);//750
             //packet_to_deliver[PACKET_OFFSET_PULSE_VAL]=0x00;
 			

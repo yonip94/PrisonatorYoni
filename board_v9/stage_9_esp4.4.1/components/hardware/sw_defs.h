@@ -296,6 +296,12 @@
 #define MMC_DEVICE_I2C_ADDRESS                  ((uint8_t)0x30)
 #define BATTERY_DEVICE_I2C_ADDRESS              ((uint8_t)0x55)
 
+#define DETECTED_AS_UNKNOWN                     ((uint8_t)0xFF)
+#define DETECTED_AS_OFF                         ((uint8_t)0x00)
+#define DETECTED_AS_ON                          ((uint8_t)0x01)
+#define DETECTED_AS_6HZ_TOGGLE                  ((uint8_t)0x02)
+#define BATTERY_NOT_CONNECTED_DETECTED          ((uint8_t)0x03)
+
 /* task priority 
  * Note 1: The tast priority cannot be higher than configMAX_PRIORITIES (25) 
  * Note 2: Low priority numbers denote low priority tasks except priority tskIDLE_PRIORITY (0).
