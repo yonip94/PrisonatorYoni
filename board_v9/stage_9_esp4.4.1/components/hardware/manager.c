@@ -1958,6 +1958,7 @@ static void manager_task_L(void *arg)
             } 
             else 
             {
+                //ets_printf("good im here good im here %06X\r\n",packet_sn);
                 packet_to_deliver[PACKET_OFFSET_TYPE] = PACKET_TYPE_VAL_NORM_CAL_ACK;
             }
 

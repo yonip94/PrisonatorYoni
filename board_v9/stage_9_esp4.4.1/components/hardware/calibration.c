@@ -1141,6 +1141,7 @@ static void calibration_check_task_L(void *arg)
  *******************************************************************/
 static esp_err_t save_calibration_data_in_NVS_L(void)
 {
+    uart_deinit();
     size_t size = 0;
     esp_err_t ret = ESP_FAIL;
 
@@ -1286,7 +1287,7 @@ static esp_err_t save_calibration_data_in_NVS_L(void)
     {
         //ESP_LOGI(TAG_CAL, "STORED DATA ON NVS IS SAME AS DATA RECEIVED. NO NEED TO SAVE DATA ON NVS");
     }
-
+    uart_init();
     return ESP_OK;   
 }
 

@@ -53,7 +53,7 @@
 /*******************************************************************/
 esp_err_t uart_init(void);
 bool is_uart_connect(void);
-
+void uart_deinit(void);
 esp_err_t uart_send_task_start(void);
 esp_err_t uart_get_task_start(void);
 void uart_data_ready_set_flag(void);

@@ -18,6 +18,13 @@ Each version should pass the following tests before it can be released:
        - The ACC  (all sensors on all axes) should be with spikes of less then abs(1.2)
 5. During long navigation (10 minutes) there are no packet losses and no resend requests
 
+
+===================================================================================================
+version 0.9.24  (stage_9_esp4.4.1):
+  - adding uart de-init function and use it before write calibration on nvs to prevent crash
+    when App sends calib packets fast enough
+===================================================================================================
+
 ===================================================================================================
 version 0.9.23  (stage_9_esp4.4.1):
   - when board button is pressed - let the app know it by send on current board transmit packets (type0 or type1)  

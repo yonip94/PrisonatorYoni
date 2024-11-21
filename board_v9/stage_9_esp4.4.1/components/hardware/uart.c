@@ -179,6 +179,17 @@ static void encodeblock_L( unsigned char *in, unsigned char *out, int len );
 /*              INTERFACE FUNCTIONS IMPLEMENTATION                 */
 /*******************************************************************/
 /*******************************************************************/
+void uart_deinit(void)
+{
+    // Disable UART interrupts
+    ESP_ERROR_LOG(uart_disable_intr_mask(UART_NUM, UART_INTRUPT_MASK));
+
+    // Unregister the ISR handler
+    ESP_ERROR_LOG(uart_isr_free(UART_NUM));
+
+    // Uninstall the UART driver
+    ESP_ERROR_LOG(uart_driver_delete(UART_NUM));
+}
 
 /****************************************************************//**
  * @brief   Initialize uart
