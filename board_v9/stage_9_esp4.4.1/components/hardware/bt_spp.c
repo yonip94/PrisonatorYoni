@@ -901,7 +901,7 @@ static void esp_spp_cb_L(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
                 }
                 else if(bt_read_buff[PACKET_OFFSET_CAL_TYPE] == PACKET_TYPE_VAL_CAL)
                 {
-                    if ((bt_read_buff[300]>=0) && (bt_read_buff[300]<=8))
+                    if (/*(bt_read_buff[300]>=CALIB_PACKET_0_INDEX) && */(bt_read_buff[300]<=CALIB_PACKET_8_INDEX))
                     {
                         if (bt_calib_parts_2d_arr[bt_read_buff[300]][0]==0)
                         {
@@ -924,7 +924,7 @@ static void esp_spp_cb_L(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
                 }
                 else if(bt_read_buff[PACKET_OFFSET_CAL_TYPE] == PACKET_TYPE_VAL_CAL)
                 {
-                    if ( ((bt_read_buff[301]>=0) && (bt_read_buff[301]<=8)) &&
+                    if ( (/*(bt_read_buff[301]>=CALIB_PACKET_0_INDEX) && */(bt_read_buff[301]<=CALIB_PACKET_8_INDEX)) &&
                         ((bt_read_buff[302]>=1) && (bt_read_buff[302]<=2))  )
                     {
                         if (bt_calib_parts_2d_arr[bt_read_buff[301]][bt_read_buff[302]]==0)

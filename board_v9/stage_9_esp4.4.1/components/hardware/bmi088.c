@@ -229,14 +229,16 @@ esp_err_t BMI088_getData(imu_all_t *imu_all, uint64_t sample_time)
 {
     //TODO condisder using the sensor time counter - remember it overflows every 11 minutes,
     // so when 0xFFFFFF flips back to 0x000000, add sample_time the value 0x01000000. 
-    int16_t temporary = 0;
-    float acc_x = 0;
-    float acc_y = 0;
-    float acc_z = 0;
-    float acc_temperature = 0;
-    float gyro_x = 0;
-    float gyro_y = 0;
-    float gyro_z = 0;
+    #if DEBUG_CONSTANT_VALUES
+        int16_t temporary = 0;
+        float acc_x = 0;
+        float acc_y = 0;
+        float acc_z = 0;
+        float acc_temperature = 0;
+        float gyro_x = 0;
+        float gyro_y = 0;
+        float gyro_z = 0;
+    #endif
 
     /* Need buffers size of 20 to be saved from unexpected byte manipulation errors */
     uint8_t gyr_data[20] = {0};
@@ -287,14 +289,16 @@ esp_err_t BMI088_getData(imu_all_t *imu_all, uint64_t sample_time)
         
         /* according to datasheet - acc_data[0] is a dummy byte */
 
-        temporary = (acc_data[2] << 8) | acc_data[1];
-        acc_x = temporary / ACCEL_SENSITIVITY;
+        #if DEBUG_CONSTANT_VALUES
+            temporary = (acc_data[2] << 8) | acc_data[1];
+            acc_x = temporary / ACCEL_SENSITIVITY;
 
-        temporary = (acc_data[4] << 8) | acc_data[3];
-        acc_y = temporary / ACCEL_SENSITIVITY;
+            temporary = (acc_data[4] << 8) | acc_data[3];
+            acc_y = temporary / ACCEL_SENSITIVITY;
 
-        temporary = (acc_data[6] << 8) | acc_data[5];
-        acc_z = temporary / ACCEL_SENSITIVITY; 
+            temporary = (acc_data[6] << 8) | acc_data[5];
+            acc_z = temporary / ACCEL_SENSITIVITY; 
+        #endif
 
         /***************************************************************/
         // read acc temperature data
@@ -312,12 +316,14 @@ esp_err_t BMI088_getData(imu_all_t *imu_all, uint64_t sample_time)
         /***************************************************************/
         // calc temperature (according to datasheet)
         /***************************************************************/
-        temporary = (acc_temperature_data[1] << 3) | (acc_temperature_data[2] >> 5);
-        if ((uint16_t)temporary > 1023)
-        {
-            temporary = (uint16_t)temporary - 2048;
-        }
-        acc_temperature = temporary * TEMP_SENSITIVITY + TEMP_OFFSET; 
+        #if DEBUG_CONSTANT_VALUES
+            temporary = (acc_temperature_data[1] << 3) | (acc_temperature_data[2] >> 5);
+            if ((uint16_t)temporary > 1023)
+            {
+                temporary = (uint16_t)temporary - 2048;
+            }
+            acc_temperature = temporary * TEMP_SENSITIVITY + TEMP_OFFSET; 
+        #endif
 
         /***************************************************************/
         // set gyro chip-select
@@ -350,14 +356,16 @@ esp_err_t BMI088_getData(imu_all_t *imu_all, uint64_t sample_time)
         /***************************************************************/
         // calc gyro values
         /***************************************************************/
-        temporary = (gyr_data[1] << 8) | gyr_data[0];
-        gyro_x = temporary / GYRO_SENSITIVITY;
-    
-        temporary = (gyr_data[3] << 8) | gyr_data[2];
-        gyro_y = temporary / GYRO_SENSITIVITY;
-    
-        temporary = (gyr_data[5] << 8) | gyr_data[4];
-        gyro_z = temporary / GYRO_SENSITIVITY;
+        #if DEBUG_CONSTANT_VALUES
+            temporary = (gyr_data[1] << 8) | gyr_data[0];
+            gyro_x = temporary / GYRO_SENSITIVITY;
+        
+            temporary = (gyr_data[3] << 8) | gyr_data[2];
+            gyro_y = temporary / GYRO_SENSITIVITY;
+        
+            temporary = (gyr_data[5] << 8) | gyr_data[4];
+            gyro_z = temporary / GYRO_SENSITIVITY;
+        #endif
     
         //printf("GYR0 X= %f, GYR0 Y=%f, GYR0 Z=%f,   NORM=%f\r\n", gyro_x, gyro_y, gyro_z, pow((pow(gyro_x,2) + pow(gyro_y,2) + pow(gyro_z,2)),0.5));
 

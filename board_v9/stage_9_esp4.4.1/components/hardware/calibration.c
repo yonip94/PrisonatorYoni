@@ -792,8 +792,8 @@ esp_err_t calibration_after_powerup(void)
     esp_err_t ret = ESP_FAIL;
     uint64_t timer_start = 0;
     uint64_t timer_diff = 0;
-    uint16_t bt_read_byte_num = 0;
-    uint8_t bt_packet_cal_acknowledge = 0;
+    //uint16_t bt_read_byte_num = 0;
+    //uint8_t bt_packet_cal_acknowledge = 0;
     //uint64_t start_time_to_catch_ack_uart=0;
     uint8_t index_r=0;
 
@@ -1518,7 +1518,8 @@ bool get_zeros_matrix_flag(void)
 
 ahrs_data_t* get_ahrs_data(void)
 {
-    return &ahrs_data;
+    //return &ahrs_data;
+    return ahrs_data;
 }
 
 /****************************************************************//**

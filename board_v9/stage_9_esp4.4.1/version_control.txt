@@ -19,6 +19,11 @@ Each version should pass the following tests before it can be released:
 5. During long navigation (10 minutes) there are no packet losses and no resend requests
 
 ===================================================================================================
+version 0.9.29  (stage_9_esp4.4.1):
+  - remove all code warnings
+===================================================================================================
+
+===================================================================================================
 version 0.9.28  (stage_9_esp4.4.1):
   - for safety, perform AES CR after detect new connection and disconnection mode exits.
   * now the process is parallel to sensors sample, and during the sampling - packets will not be

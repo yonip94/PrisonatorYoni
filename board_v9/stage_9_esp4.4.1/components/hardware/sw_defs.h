@@ -546,6 +546,8 @@ typedef enum{
 
 /* BT packet calibration size */
 #define PACKET_CALIBRATION_SIZE                 ((uint32_t)(900))
+#define CALIB_PACKET_0_INDEX                    ((uint8_t)0)
+#define CALIB_PACKET_8_INDEX                    ((uint8_t)8)
 
 /* BT packet calibration details:
 

@@ -736,7 +736,7 @@ static void IRAM_ATTR uart_intr_handle_L(void *arg)
     if (true == UART_MODULE.int_st.rxfifo_tout)
     {
         uint16_t i = 0;
-        uint8_t tmp_data = 0;
+        //uint8_t tmp_data = 0;
         uint16_t rx_fifo_len = UART_MODULE.status.rxfifo_cnt;
 
         uart_received_packet_set_size(rx_fifo_len);
@@ -754,7 +754,7 @@ static void IRAM_ATTR uart_intr_handle_L(void *arg)
             /*******************************************************/
             while (rx_fifo_len>0)
             {
-                tmp_data=UART_MODULE.fifo.rw_byte;
+                /*tmp_data=*/UART_MODULE.fifo.rw_byte;
                 rx_fifo_len=rx_fifo_len-1;
             }
             
@@ -889,7 +889,7 @@ static void uart_get_task_L(void *arg)
 
                         if(uart_rx_buf[PACKET_OFFSET_CAL_TYPE] == PACKET_TYPE_VAL_CAL)
                         {
-                            if ((uart_rx_buf[10]>=0) && (uart_rx_buf[10]<=8))
+                            if (/*(uart_rx_buf[10]>=CALIB_PACKET_0_INDEX) && */(uart_rx_buf[10]<=CALIB_PACKET_8_INDEX))
                             {
                                 if (calib_parts_2d_arr[uart_rx_buf[10]][0]==0)
                                 {
@@ -936,7 +936,7 @@ static void uart_get_task_L(void *arg)
 
                         if(uart_rx_buf[PACKET_OFFSET_CAL_TYPE] == PACKET_TYPE_VAL_CAL)
                         {
-                            if ( ((uart_rx_buf[11]>=0) && (uart_rx_buf[11]<=8)) &&
+                            if ( (/*(uart_rx_buf[11]>=CALIB_PACKET_0_INDEX) && */(uart_rx_buf[11]<=CALIB_PACKET_8_INDEX)) &&
                                  ((uart_rx_buf[12]>=1) && (uart_rx_buf[12]<=89))  )
                             {
                                 if (calib_parts_2d_arr[uart_rx_buf[11]][uart_rx_buf[12]]==0)
