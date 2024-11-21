@@ -81,4 +81,6 @@ void reset_uart_resend_delivery_chunks_counter(void);
 void calc_uart_data_to_deliver_to_other_side(void);
 void send_uart_data_to_deliver_to_other_side(void);
 void send_buff_to_app_uart_aes_only(uint8_t* buffer, uint32_t size);
+bool is_app_got_device_mac(void);
+void reset_app_got_device_mac(void);
 #endif /* _UART_H_ */

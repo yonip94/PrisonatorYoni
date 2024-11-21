@@ -159,6 +159,7 @@ static uint8_t ignore_packet_delivery_flag=0;
 
 static uint8_t uart_key_code_send_encoded[100]={0x00};
 static uint32_t relevant_encoded_buf_key_code_size = 0;
+static bool is_app_got_device_mac_ind = false;
 
 #ifdef UART_KEYBOARD_DEBUG
     static uint32_t current_sn_test = 0; 
@@ -418,6 +419,28 @@ void uart_packet_resend_buff(uint8_t* buff,uint8_t* encoded_to_resend_buff, bool
 
     resend_delivery_bytes_last_chunk_amount = (uint32_t)(stream_size_resend%RESEND_DELIVERY_CHUNKS);
     resend_delivery_bytes_chunks_amount = (uint32_t)(stream_size_resend/RESEND_DELIVERY_CHUNKS);
+}
+
+/****************************************************************//**
+ * @brief   get indicator that app got mac address 
+
+ * @param   [IN] none
+ * @return  none
+ *******************************************************************/
+bool is_app_got_device_mac(void)
+{
+    return(is_app_got_device_mac_ind);
+}
+
+/****************************************************************//**
+ * @brief   reset app got mac address ind
+
+ * @param   [IN] none
+ * @return  none
+ *******************************************************************/
+void reset_app_got_device_mac(void)
+{
+    is_app_got_device_mac_ind = false;
 }
 
 /****************************************************************//**
@@ -1217,6 +1240,13 @@ static void uart_get_task_L(void *arg)
 		                        set_on_respond_to_reset_cases();
 		                    }
 
+                            else if ( (uart_rx_buf[PACKET_OFFSET_TYPE] == 'i') ||
+                                      (uart_rx_buf[PACKET_OFFSET_TYPE] == 'I')   )//debug app got mac address since new cable connection after disconnection mode
+                            {
+								ets_printf("app got mac address\r\n");
+		                        is_app_got_device_mac_ind = true;
+		                    }
+                            
                             else if ( (uart_rx_buf[PACKET_OFFSET_TYPE] == 'o') ||
                                       (uart_rx_buf[PACKET_OFFSET_TYPE] == 'O')   )//debug changing bt intensity when connected
                             {
@@ -1401,7 +1431,14 @@ static void uart_get_task_L(void *arg)
 			                        set_on_respond_to_reset_cases();
 			                        break;
 			                    }
-								
+
+			                    case(0x3E):
+			                    {
+									//ets_printf("app got mac address\r\n");
+			                        is_app_got_device_mac_ind = true;
+			                        break;
+			                    }
+
                                 default:
                                 {
                                     ets_printf("invalid state\r\n");

@@ -54,17 +54,20 @@
 /*******************************************************************/
 /*******************************************************************/
 /* system definitions */
-#define SAMPLE_IMU_PERIOD_US                    ((uint64_t)5000) //5msec
+#define SAMPLE_IMU_PERIOD_US                    			((uint64_t)5000) //5msec
 
-#define MAX_ALLOWED_IMU_READ_SEQ_FAIL           ((uint32_t)1)
-#define MAX_ALLOWED_HARD_ROBAST_SEQ_FAIL        ((uint32_t)4)
+#define MAX_ALLOWED_IMU_READ_SEQ_FAIL           			((uint32_t)1)
+#define MAX_ALLOWED_HARD_ROBAST_SEQ_FAIL        			((uint32_t)4)
 
 /* status definitions */
-#define ACTIVATE_MMC_SET_PERIOD_US              ((uint64_t)(1000 * 1000)) //1 sec
+#define ACTIVATE_MMC_SET_PERIOD_US              			((uint64_t)(1000 * 1000)) //1 sec
+
+#define NUMBER_OF_PERIOD_PACKETS_BEFORE_EXPOSE_MAC_TO_USER 	((uint32_t)10)
+ #define TIMEOUT_GET_APP_MAC_ACK_UART_US                    ((uint64_t)5000000)
 
 /* idle mode */
-#define IDLE_MODE_ON                            (1)
-#define IDLE_MODE_OFF                           (0)
+#define IDLE_MODE_ON                            			(1)
+#define IDLE_MODE_OFF                           			(0)
 
 #define EXTERNAL_FLASH_WRITE_TIMES_IN_ITERATION             ((uint32_t)(4))//((uint32_t)(1))
 
@@ -220,6 +223,8 @@ static uint8_t fault_manager_flag = NO_FAULT_MASK;
 
 static bool is_disconnected_detected_at_least_once = false;
 static bool is_cr_aes_operation_should_be_performed = false;
+static bool is_arrived_from_disconnect_mode = false;
+static uint64_t waiting_for_app_ack_about_unit_mac_start_time = 0;
 
 #ifdef FLASH_READ_DEBUG
     static uint8_t test_packet[FLASH_PACKET_SIZE] ={0};
@@ -2057,7 +2062,58 @@ static void manager_task_L(void *arg)
             {
                 packet_to_deliver[PACKET_OFFSET_PULSE_VAL] = packet_to_deliver[PACKET_OFFSET_PULSE_VAL] | VIN_ABSENT_EN_DISABLED_THERMAL_SHUTDOWN_MASK;
             }
-			
+
+            //if on this runtime - disconnection mode was detected at least once
+            if (is_disconnected_detected_at_least_once == true)
+            {
+                //if uart is the current connection (uart ka was gotten)
+                if(true == is_uart_connect())
+                {
+					//if aes cr was finished
+				    if ((get_cr_aes_operations_flag()==CR_AES_SHOULD_NOT_BE_PERFORMED) || 
+					    (get_cr_aes_operations_flag()==CR_AES_DONE))
+					{
+						//if arrived from disconnection mode and mac ack still was not gotten
+	                    if (is_arrived_from_disconnect_mode == true)
+	                    {
+	                        //if board didnt got ack from app about receiving its mac - keep send mac via 5sec timeout
+	                        if (is_app_got_device_mac() == false)
+	                        {
+	                            if (waiting_for_app_ack_about_unit_mac_start_time == 0)
+	                            {
+	                                waiting_for_app_ack_about_unit_mac_start_time = esp_timer_get_time();
+	                            }
+	                            else
+	                            {
+	                                if ((esp_timer_get_time() - waiting_for_app_ack_about_unit_mac_start_time) >= TIMEOUT_GET_APP_MAC_ACK_UART_US)
+	                                {
+	                                    set_hard_reset_flag(RESET_REASON_GOT_COMMAND_FROM_OTHER_SIDE_UART);
+	                                    hard_reset();
+	                                    while(1)
+	                                    {
+	                                        vTaskDelay(1000);
+	                                    }
+	                                }
+	                            }
+
+	                            if((packet_sn%NUMBER_OF_PERIOD_PACKETS_BEFORE_EXPOSE_MAC_TO_USER) == 0)
+	                            {
+	                                packet_to_deliver[PACKET_OFFSET_BARO_TEMP_VAL+0]=0xDD;
+	                                packet_to_deliver[PACKET_OFFSET_BARO_TEMP_VAL+1]=device_mac[4];
+	                                packet_to_deliver[PACKET_OFFSET_BARO_TEMP_VAL+2]=device_mac[5];
+	                                packet_to_deliver[PACKET_OFFSET_BARO_TEMP_VAL+3]=0xDD;
+	                            }
+	                        }
+	                        else
+	                        {
+	                            waiting_for_app_ack_about_unit_mac_start_time = 0;
+	                            is_arrived_from_disconnect_mode = false;
+	                        }
+						}
+                    }
+                }
+            }
+            
             //printf("pulse byte location = %u = 0x%02X\r\n",PACKET_OFFSET_PULSE_VAL,packet_to_deliver[PACKET_OFFSET_PULSE_VAL]);
             //printf("nav resend ind loc = %u, nav resend ind = 0x%02X\r\n",PACKET_OFFSET_PULSE_VAL, packet_to_deliver[PACKET_OFFSET_PULSE_VAL]);//750
             //packet_to_deliver[PACKET_OFFSET_PULSE_VAL]=0x00;
@@ -2221,6 +2277,10 @@ static void manager_task_L(void *arg)
 
                     req_to_reset_cr_aes_operations_flag();
                     is_cr_aes_operation_should_be_performed = true;
+					
+                    //when on disconnetion mode - be ready to get mac address if cable will be the next connection
+                    reset_app_got_device_mac();
+                    is_arrived_from_disconnect_mode = true;
 
                     /*******************************************/
                     // reset uart communication flag to catch
@@ -2333,6 +2393,7 @@ static void manager_task_L(void *arg)
                     //make the board to be invisible on devices lists when already connected to any phone
                     esp_bt_gap_set_scan_mode(ESP_BT_NON_CONNECTABLE, ESP_BT_NON_DISCOVERABLE);
                     last_communication_detected = BT_COMMUNICATION_DETECTED;
+					is_arrived_from_disconnect_mode = false;
 
                     //if on this runtime - disconnection mode was detected at least once
                     if (is_disconnected_detected_at_least_once == true)
@@ -2388,7 +2449,11 @@ static void manager_task_L(void *arg)
 
                         req_to_reset_cr_aes_operations_flag();
                         is_cr_aes_operation_should_be_performed = true;
-
+						
+                        //when on disconnetion mode - be ready to get mac address if cable will be the next connection
+                        reset_app_got_device_mac();
+                        is_arrived_from_disconnect_mode = true;
+						
                         /*******************************************/
                         //reconnecting the bt   
                         /*******************************************/

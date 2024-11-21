@@ -19,6 +19,29 @@ Each version should pass the following tests before it can be released:
 5. During long navigation (10 minutes) there are no packet losses and no resend requests
 
 ===================================================================================================
+version 0.9.31  (stage_9_esp4.4.1):
+  - on uart communication detection since at least 1 disconnetion mode
+    sending mac address last 2 bytes on magnetometer 2 set 1 data field each NUMBER_OF_PERIOD_PACKETS_BEFORE_EXPOSE_MAC_TO_USER 
+    type0 transmittions.
+    when app sends type 8,3e -> the board will stop deliver the mac
+    if the app was not send the 8,3e when uart communication detected when arrived from disconnection mode only,
+    the board will reset itself after timeout of TIMEOUT_GET_APP_MAC_ACK_UART_US us 
+    since got the 1st UART KA from app on disconnection mode.
+    * type 8,3e valid on UART only.
+
+    * data will be delivered on this way:
+    PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+10+0 bias - MAC_ADD[4]
+    PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+10+1 bias - MAC_ADD[5]
+
+    data should be valid only if both conditions are true:
+    [PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+0]=0xDD 
+    [PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+1]=0xDD
+
+    *they will focus resends so giving them the TIMEOUT_GET_APP_MAC_ACK_UART_US since resend is finished?
+
+===================================================================================================
+
+===================================================================================================
 version 0.9.30  (stage_9_esp4.4.1):
   - remove rs232 pwr enable (gpio17) which is not used and was missed on the code
     since board version 9 was released.

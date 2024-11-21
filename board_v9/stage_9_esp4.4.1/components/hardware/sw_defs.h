@@ -68,7 +68,7 @@
 //uncomment - to deliver bat temperature
 //comment -   to not deliver bat temperature
 /*******************************************************************/
-//#define DELIVER_BAT_TEMPERATURE
+#define DELIVER_BAT_TEMPERATURE
 
 /*******************************************************************/
 //test the project with uart - without need to use app, but by keyboard
