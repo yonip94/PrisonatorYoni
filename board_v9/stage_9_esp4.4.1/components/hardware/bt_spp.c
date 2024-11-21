@@ -70,6 +70,8 @@ static bool bt_not_write_flag = true;
 static uint8_t reason_of_bt_closed_connection = NONE_CLOSED_BT_COMMUNICATION;
 static bool app_ask_to_close_bt = false;
 static uint8_t bt_key_code_send[KEY_CODE_TOTAL_SIZE]={0x00};
+static bool is_bt_initialized = false;
+static bool ble_mem_released = false;
 
 /*******************************************************************/
 /*******************************************************************/
@@ -87,6 +89,81 @@ static esp_err_t bt_init_L(void);
 /*******************************************************************/
 
 /****************************************************************//**
+ * @brief   de-Initialize the BT interface
+ * 
+ * @param   none
+ * @return  ESP_OK on success or ESP_ERR_[ERROR] otherwise
+ *******************************************************************/
+esp_err_t bt_uinit(void)
+{
+    esp_err_t ret = ESP_FAIL;
+
+    if (is_bt_initialized == false)
+    {
+        //already bt de-initialized
+        return(ESP_OK);
+    }
+
+    /***************************************************************/
+    // Unregister SPP callback
+    /***************************************************************/
+    ret = esp_spp_deinit();
+    if (ret) 
+    {
+        ESP_LOGE(TAG_BT, "%s spp deinit failed: %s\n", __func__, esp_err_to_name(ret));
+        return ESP_FAIL;
+    }
+
+    /***************************************************************/
+    // Unregister GAP callback (optional)
+    /***************************************************************/
+    esp_bt_gap_register_callback(NULL);
+
+    /***************************************************************/
+    // Disable bluedroid stack
+    /***************************************************************/
+    ret = esp_bluedroid_disable();
+    if (ret) 
+    {
+        ESP_LOGE(TAG_BT, "%s disable bluedroid failed: %s", __func__, esp_err_to_name(ret));
+        return ESP_FAIL;
+    }
+
+    /***************************************************************/
+    // Deinit bluedroid stack
+    /***************************************************************/
+    ret = esp_bluedroid_deinit();
+    if (ret) 
+    {
+        ESP_LOGE(TAG_BT, "%s deinit bluedroid failed: %s", __func__, esp_err_to_name(ret));
+        return ESP_FAIL;
+    }
+
+    /***************************************************************/
+    // Disable BT controller
+    /***************************************************************/
+    ret = esp_bt_controller_disable();
+    if (ret) 
+    {
+        ESP_LOGE(TAG_BT, "%s disable controller failed: %s", __func__, esp_err_to_name(ret));
+        return ESP_FAIL;
+    }
+
+    /***************************************************************/
+    // Deinit BT controller
+    /***************************************************************/
+    ret = esp_bt_controller_deinit();
+    if (ret) 
+    {
+        ESP_LOGE(TAG_BT, "%s deinit controller failed: %s", __func__, esp_err_to_name(ret));
+        return ESP_FAIL;
+    }
+
+    is_bt_initialized = false;
+    return ESP_OK;
+}
+
+/****************************************************************//**
  * @brief   Initialize the BT interface
  * 
  * @param   none
@@ -94,7 +171,12 @@ static esp_err_t bt_init_L(void);
  *******************************************************************/
 esp_err_t bt_init(void)
 {
-    
+    if (is_bt_initialized == true)
+    {
+        //already bt initialized
+        return(ESP_OK);
+    }
+
     /***************************************************************/
     // init connectionHandle
     /***************************************************************/
@@ -108,7 +190,10 @@ esp_err_t bt_init(void)
     /***************************************************************/
     // init BT
     /***************************************************************/
-    ESP_ERROR_LOG(bt_init_L());
+    if (ESP_OK!=bt_init_L())
+    {
+        return ESP_FAIL;
+    }
 
     /***************************************************************/
     // set BT state
@@ -131,6 +216,7 @@ esp_err_t bt_init(void)
 
     bt_finishing_with_calib_packet=false;
     bt_finishing_with_mag_calib_packet=false;
+    is_bt_initialized = true;
 
     return ESP_OK;
 }
@@ -165,6 +251,10 @@ uint8_t get_bt_close_connection_reason(void)
  *******************************************************************/
 esp_err_t bt_toggle(bt_toggle_t toggle)
 {
+    if (is_bt_initialized == false)
+    {
+        return(ESP_FAIL);
+    }
 
     /***************************************************************/
     // disable BT
@@ -211,6 +301,11 @@ esp_err_t bt_toggle(bt_toggle_t toggle)
  *******************************************************************/
 esp_err_t bt_send_data(uint8_t* bt_data, uint32_t size)
 {
+    if (is_bt_initialized == false)
+    {
+        return(ESP_FAIL);
+    }
+
     /***************************************************************/
     // Check connection
     /***************************************************************/
@@ -221,200 +316,202 @@ esp_err_t bt_send_data(uint8_t* bt_data, uint32_t size)
     }
 
     #ifdef BT_PACKET_VALUES_PRINTS_EVERY_TRANSMIT_DEBUG
-        uint64_t ts_imu=0;
-        uint64_t ts_mmc=0;
-        
-        uint16_t acc_x_bytes=0;
-        uint16_t acc_y_bytes=0;
-        uint16_t acc_z_bytes=0;
-
-        uint16_t gyr_x_bytes=0;
-        uint16_t gyr_y_bytes=0;
-        uint16_t gyr_z_bytes=0;
-
-        float acc_x_float=0;
-        float acc_y_float=0;
-        float acc_z_float=0;
-
-        float gyr_x_float=0;
-        float gyr_y_float=0;
-        float gyr_z_float=0;
-
-        float mmc_x_float=0;
-        float mmc_y_float=0;
-        float mmc_z_float=0;
-
-        float baro_pressure_float=0;
-        float baro_temp_float=0;
-
-        #ifdef BT_PACKET_PRINTS_IMU
-            acc_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_1]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_1+1]));
-            acc_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_1+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_1+3]));
-            acc_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_1+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_1+5]));
-
-            acc_x_float = (float)(((int16_t)(acc_x_bytes))/ACCEL_SENSITIVITY);
-            acc_y_float = (float)(((int16_t)(acc_y_bytes))/ACCEL_SENSITIVITY);
-            acc_z_float = (float)(((int16_t)(acc_z_bytes))/ACCEL_SENSITIVITY);
-
-            memcpy (&ts_imu,bt_data + PACKET_OFFSET_IMU_SET_1 + (PACKET_IMU_SET_SIZE - TIMESTAMP_BYTES_NUM),TIMESTAMP_BYTES_NUM);
-
-            //ets_printf("ACC0 X=0x%04X, ACC0 Y=0x%04X, ACC0 Z=0x%04X, type 0x%02X, packet sn = 0x%02X%02X%02X\r\n",acc_x_bytes,acc_y_bytes,acc_z_bytes,bt_data[0],bt_data[3],bt_data[2],bt_data[1]);
-            printf("IMU TS = %llu\r\n",ts_imu);
-            printf("ACC0: X=%f, Y=%f, Z=%f, N=%f\r\n", acc_x_float, acc_y_float, acc_z_float, pow((pow(acc_x_float,2) + pow(acc_y_float,2) + pow(acc_z_float,2)),0.5));
+        if (size == PACKET_NORM_SIZE)
+        { 
+            uint64_t ts_imu=0;
+            uint64_t ts_mmc=0;
             
-            acc_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_2]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_2+1]));
-            acc_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_2+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_2+3]));
-            acc_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_2+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_2+5]));
+            uint16_t acc_x_bytes=0;
+            uint16_t acc_y_bytes=0;
+            uint16_t acc_z_bytes=0;
 
-            acc_x_float = (float)(((int16_t)(acc_x_bytes))/ACCEL_SENSITIVITY);
-            acc_y_float = (float)(((int16_t)(acc_y_bytes))/ACCEL_SENSITIVITY);
-            acc_z_float = (float)(((int16_t)(acc_z_bytes))/ACCEL_SENSITIVITY);
+            uint16_t gyr_x_bytes=0;
+            uint16_t gyr_y_bytes=0;
+            uint16_t gyr_z_bytes=0;
 
-            printf("ACC1: X=%f, Y=%f, Z=%f, N=%f\r\n", acc_x_float, acc_y_float, acc_z_float, pow((pow(acc_x_float,2) + pow(acc_y_float,2) + pow(acc_z_float,2)),0.5));
+            float acc_x_float=0;
+            float acc_y_float=0;
+            float acc_z_float=0;
+
+            float gyr_x_float=0;
+            float gyr_y_float=0;
+            float gyr_z_float=0;
+
+            float mmc_x_float=0;
+            float mmc_y_float=0;
+            float mmc_z_float=0;
+
+            float baro_pressure_float=0;
+            float baro_temp_float=0;
+
+            #ifdef BT_PACKET_PRINTS_IMU
+                acc_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_1]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_1+1]));
+                acc_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_1+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_1+3]));
+                acc_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_1+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_1+5]));
+
+                acc_x_float = (float)(((int16_t)(acc_x_bytes))/ACCEL_SENSITIVITY);
+                acc_y_float = (float)(((int16_t)(acc_y_bytes))/ACCEL_SENSITIVITY);
+                acc_z_float = (float)(((int16_t)(acc_z_bytes))/ACCEL_SENSITIVITY);
+
+                memcpy (&ts_imu,bt_data + PACKET_OFFSET_IMU_SET_1 + (PACKET_IMU_SET_SIZE - TIMESTAMP_BYTES_NUM),TIMESTAMP_BYTES_NUM);
+
+                //ets_printf("ACC0 X=0x%04X, ACC0 Y=0x%04X, ACC0 Z=0x%04X, type 0x%02X, packet sn = 0x%02X%02X%02X\r\n",acc_x_bytes,acc_y_bytes,acc_z_bytes,bt_data[0],bt_data[3],bt_data[2],bt_data[1]);
+                printf("IMU TS = %llu\r\n",ts_imu);
+                printf("ACC0: X=%f, Y=%f, Z=%f, N=%f\r\n", acc_x_float, acc_y_float, acc_z_float, pow((pow(acc_x_float,2) + pow(acc_y_float,2) + pow(acc_z_float,2)),0.5));
+                
+                acc_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_2]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_2+1]));
+                acc_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_2+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_2+3]));
+                acc_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_2+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_2+5]));
+
+                acc_x_float = (float)(((int16_t)(acc_x_bytes))/ACCEL_SENSITIVITY);
+                acc_y_float = (float)(((int16_t)(acc_y_bytes))/ACCEL_SENSITIVITY);
+                acc_z_float = (float)(((int16_t)(acc_z_bytes))/ACCEL_SENSITIVITY);
+
+                printf("ACC1: X=%f, Y=%f, Z=%f, N=%f\r\n", acc_x_float, acc_y_float, acc_z_float, pow((pow(acc_x_float,2) + pow(acc_y_float,2) + pow(acc_z_float,2)),0.5));
+                
+                acc_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_3]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_3+1]));
+                acc_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_3+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_3+3]));
+                acc_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_3+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_3+5]));
+
+                acc_x_float = (float)(((int16_t)(acc_x_bytes))/ACCEL_SENSITIVITY);
+                acc_y_float = (float)(((int16_t)(acc_y_bytes))/ACCEL_SENSITIVITY);
+                acc_z_float = (float)(((int16_t)(acc_z_bytes))/ACCEL_SENSITIVITY);
+                
+                printf("ACC2: X=%f, Y=%f, Z=%f, N=%f\r\n", acc_x_float, acc_y_float, acc_z_float, pow((pow(acc_x_float,2) + pow(acc_y_float,2) + pow(acc_z_float,2)),0.5));
+                
+                acc_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_4]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_4+1]));
+                acc_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_4+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_4+3]));
+                acc_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_4+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_4+5]));
+
+                acc_x_float = (float)(((int16_t)(acc_x_bytes))/ACCEL_SENSITIVITY);
+                acc_y_float = (float)(((int16_t)(acc_y_bytes))/ACCEL_SENSITIVITY);
+                acc_z_float = (float)(((int16_t)(acc_z_bytes))/ACCEL_SENSITIVITY);
+                
+                printf("ACC3: X=%f, Y=%f, Z=%f, N=%f\r\n", acc_x_float, acc_y_float, acc_z_float, pow((pow(acc_x_float,2) + pow(acc_y_float,2) + pow(acc_z_float,2)),0.5));
+                
+                acc_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_5]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_5+1]));
+                acc_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_5+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_5+3]));
+                acc_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_5+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_5+5]));
+
+                acc_x_float = (float)(((int16_t)(acc_x_bytes))/ACCEL_SENSITIVITY);
+                acc_y_float = (float)(((int16_t)(acc_y_bytes))/ACCEL_SENSITIVITY);
+                acc_z_float = (float)(((int16_t)(acc_z_bytes))/ACCEL_SENSITIVITY);
+                
+                printf("ACC4: X=%f, Y=%f, Z=%f, N=%f\r\n", acc_x_float, acc_y_float, acc_z_float, pow((pow(acc_x_float,2) + pow(acc_y_float,2) + pow(acc_z_float,2)),0.5));
+                
+                acc_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_6]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_6+1]));
+                acc_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_6+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_6+3]));
+                acc_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_6+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_6+5]));
+
+                acc_x_float = (float)(((int16_t)(acc_x_bytes))/ACCEL_SENSITIVITY);
+                acc_y_float = (float)(((int16_t)(acc_y_bytes))/ACCEL_SENSITIVITY);
+                acc_z_float = (float)(((int16_t)(acc_z_bytes))/ACCEL_SENSITIVITY);
             
-            acc_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_3]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_3+1]));
-            acc_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_3+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_3+3]));
-            acc_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_3+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_3+5]));
+                printf("ACC5: X=%f, Y=%f, Z=%f, N=%f\r\n", acc_x_float, acc_y_float, acc_z_float, pow((pow(acc_x_float,2) + pow(acc_y_float,2) + pow(acc_z_float,2)),0.5));
 
-            acc_x_float = (float)(((int16_t)(acc_x_bytes))/ACCEL_SENSITIVITY);
-            acc_y_float = (float)(((int16_t)(acc_y_bytes))/ACCEL_SENSITIVITY);
-            acc_z_float = (float)(((int16_t)(acc_z_bytes))/ACCEL_SENSITIVITY);
-            
-            printf("ACC2: X=%f, Y=%f, Z=%f, N=%f\r\n", acc_x_float, acc_y_float, acc_z_float, pow((pow(acc_x_float,2) + pow(acc_y_float,2) + pow(acc_z_float,2)),0.5));
-            
-            acc_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_4]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_4+1]));
-            acc_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_4+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_4+3]));
-            acc_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_4+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_4+5]));
+                gyr_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_1+6]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_1+6+1]));
+                gyr_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_1+6+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_1+6+3]));
+                gyr_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_1+6+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_1+6+5]));
 
-            acc_x_float = (float)(((int16_t)(acc_x_bytes))/ACCEL_SENSITIVITY);
-            acc_y_float = (float)(((int16_t)(acc_y_bytes))/ACCEL_SENSITIVITY);
-            acc_z_float = (float)(((int16_t)(acc_z_bytes))/ACCEL_SENSITIVITY);
-            
-            printf("ACC3: X=%f, Y=%f, Z=%f, N=%f\r\n", acc_x_float, acc_y_float, acc_z_float, pow((pow(acc_x_float,2) + pow(acc_y_float,2) + pow(acc_z_float,2)),0.5));
-            
-            acc_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_5]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_5+1]));
-            acc_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_5+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_5+3]));
-            acc_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_5+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_5+5]));
+                gyr_x_float = (float)(((int16_t)(gyr_x_bytes))/GYRO_SENSITIVITY);
+                gyr_y_float = (float)(((int16_t)(gyr_y_bytes))/GYRO_SENSITIVITY);
+                gyr_z_float = (float)(((int16_t)(gyr_z_bytes))/GYRO_SENSITIVITY);
 
-            acc_x_float = (float)(((int16_t)(acc_x_bytes))/ACCEL_SENSITIVITY);
-            acc_y_float = (float)(((int16_t)(acc_y_bytes))/ACCEL_SENSITIVITY);
-            acc_z_float = (float)(((int16_t)(acc_z_bytes))/ACCEL_SENSITIVITY);
-            
-            printf("ACC4: X=%f, Y=%f, Z=%f, N=%f\r\n", acc_x_float, acc_y_float, acc_z_float, pow((pow(acc_x_float,2) + pow(acc_y_float,2) + pow(acc_z_float,2)),0.5));
-            
-            acc_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_6]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_6+1]));
-            acc_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_6+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_6+3]));
-            acc_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_6+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_6+5]));
+                //ets_printf("GYR0 X=0x%04X, GYR0 Y=0x%04X, GYR0 Z=0x%04X, type 0x%02X, packet sn = 0x%02X%02X%02X\r\n",gyr_x_bytes,gyr_y_bytes,gyr_z_bytes,bt_data[0],bt_data[3],bt_data[2],bt_data[1]);
+                printf("GYR0: X=%f, Y=%f, Z=%f, N=%f\r\n", gyr_x_float, gyr_y_float, gyr_z_float, pow((pow(gyr_x_float,2) + pow(gyr_y_float,2) + pow(gyr_z_float,2)),0.5));
 
-            acc_x_float = (float)(((int16_t)(acc_x_bytes))/ACCEL_SENSITIVITY);
-            acc_y_float = (float)(((int16_t)(acc_y_bytes))/ACCEL_SENSITIVITY);
-            acc_z_float = (float)(((int16_t)(acc_z_bytes))/ACCEL_SENSITIVITY);
-        
-            printf("ACC5: X=%f, Y=%f, Z=%f, N=%f\r\n", acc_x_float, acc_y_float, acc_z_float, pow((pow(acc_x_float,2) + pow(acc_y_float,2) + pow(acc_z_float,2)),0.5));
+                gyr_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_2+6]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_2+6+1]));
+                gyr_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_2+6+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_2+6+3]));
+                gyr_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_2+6+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_2+6+5]));
 
-            gyr_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_1+6]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_1+6+1]));
-            gyr_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_1+6+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_1+6+3]));
-            gyr_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_1+6+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_1+6+5]));
+                gyr_x_float = (float)(((int16_t)(gyr_x_bytes))/GYRO_SENSITIVITY);
+                gyr_y_float = (float)(((int16_t)(gyr_y_bytes))/GYRO_SENSITIVITY);
+                gyr_z_float = (float)(((int16_t)(gyr_z_bytes))/GYRO_SENSITIVITY);
+                printf("GYR1: X=%f, Y=%f, Z=%f, N=%f\r\n", gyr_x_float, gyr_y_float, gyr_z_float, pow((pow(gyr_x_float,2) + pow(gyr_y_float,2) + pow(gyr_z_float,2)),0.5));
 
-            gyr_x_float = (float)(((int16_t)(gyr_x_bytes))/GYRO_SENSITIVITY);
-            gyr_y_float = (float)(((int16_t)(gyr_y_bytes))/GYRO_SENSITIVITY);
-            gyr_z_float = (float)(((int16_t)(gyr_z_bytes))/GYRO_SENSITIVITY);
+                gyr_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_3+6]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_3+6+1]));
+                gyr_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_3+6+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_3+6+3]));
+                gyr_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_3+6+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_3+6+5]));
 
-            //ets_printf("GYR0 X=0x%04X, GYR0 Y=0x%04X, GYR0 Z=0x%04X, type 0x%02X, packet sn = 0x%02X%02X%02X\r\n",gyr_x_bytes,gyr_y_bytes,gyr_z_bytes,bt_data[0],bt_data[3],bt_data[2],bt_data[1]);
-            printf("GYR0: X=%f, Y=%f, Z=%f, N=%f\r\n", gyr_x_float, gyr_y_float, gyr_z_float, pow((pow(gyr_x_float,2) + pow(gyr_y_float,2) + pow(gyr_z_float,2)),0.5));
+                gyr_x_float = (float)(((int16_t)(gyr_x_bytes))/GYRO_SENSITIVITY);
+                gyr_y_float = (float)(((int16_t)(gyr_y_bytes))/GYRO_SENSITIVITY);
+                gyr_z_float = (float)(((int16_t)(gyr_z_bytes))/GYRO_SENSITIVITY);
+                printf("GYR2: X=%f, Y=%f, Z=%f, N=%f\r\n", gyr_x_float, gyr_y_float, gyr_z_float, pow((pow(gyr_x_float,2) + pow(gyr_y_float,2) + pow(gyr_z_float,2)),0.5));
+                
+                gyr_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_4+6]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_4+6+1]));
+                gyr_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_4+6+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_4+6+3]));
+                gyr_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_4+6+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_4+6+5]));
 
-            gyr_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_2+6]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_2+6+1]));
-            gyr_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_2+6+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_2+6+3]));
-            gyr_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_2+6+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_2+6+5]));
+                gyr_x_float = (float)(((int16_t)(gyr_x_bytes))/GYRO_SENSITIVITY);
+                gyr_y_float = (float)(((int16_t)(gyr_y_bytes))/GYRO_SENSITIVITY);
+                gyr_z_float = (float)(((int16_t)(gyr_z_bytes))/GYRO_SENSITIVITY);
+                printf("GYR3: X=%f, Y=%f, Z=%f, N=%f\r\n", gyr_x_float, gyr_y_float, gyr_z_float, pow((pow(gyr_x_float,2) + pow(gyr_y_float,2) + pow(gyr_z_float,2)),0.5));
+                
+                gyr_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_5+6]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_5+6+1]));
+                gyr_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_5+6+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_5+6+3]));
+                gyr_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_5+6+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_5+6+5]));
 
-            gyr_x_float = (float)(((int16_t)(gyr_x_bytes))/GYRO_SENSITIVITY);
-            gyr_y_float = (float)(((int16_t)(gyr_y_bytes))/GYRO_SENSITIVITY);
-            gyr_z_float = (float)(((int16_t)(gyr_z_bytes))/GYRO_SENSITIVITY);
-            printf("GYR1: X=%f, Y=%f, Z=%f, N=%f\r\n", gyr_x_float, gyr_y_float, gyr_z_float, pow((pow(gyr_x_float,2) + pow(gyr_y_float,2) + pow(gyr_z_float,2)),0.5));
+                gyr_x_float = (float)(((int16_t)(gyr_x_bytes))/GYRO_SENSITIVITY);
+                gyr_y_float = (float)(((int16_t)(gyr_y_bytes))/GYRO_SENSITIVITY);
+                gyr_z_float = (float)(((int16_t)(gyr_z_bytes))/GYRO_SENSITIVITY);
+                printf("GYR4: X=%f, Y=%f, Z=%f, N=%f\r\n", gyr_x_float, gyr_y_float, gyr_z_float, pow((pow(gyr_x_float,2) + pow(gyr_y_float,2) + pow(gyr_z_float,2)),0.5));
+                
+                gyr_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_6+6]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_6+6+1]));
+                gyr_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_6+6+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_6+6+3]));
+                gyr_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_6+6+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_6+6+5]));
 
-            gyr_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_3+6]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_3+6+1]));
-            gyr_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_3+6+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_3+6+3]));
-            gyr_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_3+6+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_3+6+5]));
+                gyr_x_float = (float)(((int16_t)(gyr_x_bytes))/GYRO_SENSITIVITY);
+                gyr_y_float = (float)(((int16_t)(gyr_y_bytes))/GYRO_SENSITIVITY);
+                gyr_z_float = (float)(((int16_t)(gyr_z_bytes))/GYRO_SENSITIVITY);
+                printf("GYR5: X=%f, Y=%f, Z=%f, N=%f\r\n", gyr_x_float, gyr_y_float, gyr_z_float, pow((pow(gyr_x_float,2) + pow(gyr_y_float,2) + pow(gyr_z_float,2)),0.5));
+            #endif
 
-            gyr_x_float = (float)(((int16_t)(gyr_x_bytes))/GYRO_SENSITIVITY);
-            gyr_y_float = (float)(((int16_t)(gyr_y_bytes))/GYRO_SENSITIVITY);
-            gyr_z_float = (float)(((int16_t)(gyr_z_bytes))/GYRO_SENSITIVITY);
-            printf("GYR2: X=%f, Y=%f, Z=%f, N=%f\r\n", gyr_x_float, gyr_y_float, gyr_z_float, pow((pow(gyr_x_float,2) + pow(gyr_y_float,2) + pow(gyr_z_float,2)),0.5));
-            
-            gyr_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_4+6]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_4+6+1]));
-            gyr_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_4+6+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_4+6+3]));
-            gyr_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_4+6+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_4+6+5]));
+            #ifdef BT_PACKET_PRINTS_BARO
+                memcpy(&baro_pressure_float,bt_data + PACKET_OFFSET_BARO_PRESSURE_VAL, 4); 
+                memcpy(&baro_temp_float, bt_data + PACKET_OFFSET_BARO_TEMP_VAL, 4);
+                printf("Baro: Pressure = %f, Temp = %f, pressure location = %u\r\n",baro_pressure_float, baro_temp_float,PACKET_OFFSET_BARO_PRESSURE_VAL);
+            #endif 
 
-            gyr_x_float = (float)(((int16_t)(gyr_x_bytes))/GYRO_SENSITIVITY);
-            gyr_y_float = (float)(((int16_t)(gyr_y_bytes))/GYRO_SENSITIVITY);
-            gyr_z_float = (float)(((int16_t)(gyr_z_bytes))/GYRO_SENSITIVITY);
-            printf("GYR3: X=%f, Y=%f, Z=%f, N=%f\r\n", gyr_x_float, gyr_y_float, gyr_z_float, pow((pow(gyr_x_float,2) + pow(gyr_y_float,2) + pow(gyr_z_float,2)),0.5));
-            
-            gyr_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_5+6]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_5+6+1]));
-            gyr_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_5+6+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_5+6+3]));
-            gyr_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_5+6+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_5+6+5]));
+            #ifdef BT_PACKET_PRINTS_MMC
+                memcpy (&ts_mmc,bt_data + PACKET_OFFSET_MMC_SET_1 + (PACKET_MMC_SET_SIZE - TIMESTAMP_BYTES_NUM),TIMESTAMP_BYTES_NUM);
+                printf("MMC set1 TS = %llu\r\n",ts_mmc);
 
-            gyr_x_float = (float)(((int16_t)(gyr_x_bytes))/GYRO_SENSITIVITY);
-            gyr_y_float = (float)(((int16_t)(gyr_y_bytes))/GYRO_SENSITIVITY);
-            gyr_z_float = (float)(((int16_t)(gyr_z_bytes))/GYRO_SENSITIVITY);
-            printf("GYR4: X=%f, Y=%f, Z=%f, N=%f\r\n", gyr_x_float, gyr_y_float, gyr_z_float, pow((pow(gyr_x_float,2) + pow(gyr_y_float,2) + pow(gyr_z_float,2)),0.5));
-            
-            gyr_x_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_6+6]<<8)   | bt_data[PACKET_OFFSET_IMU_SET_6+6+1]));
-            gyr_y_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_6+6+2]<<8) | bt_data[PACKET_OFFSET_IMU_SET_6+6+3]));
-            gyr_z_bytes = (uint16_t)(((uint16_t)(bt_data[PACKET_OFFSET_IMU_SET_6+6+4]<<8) | bt_data[PACKET_OFFSET_IMU_SET_6+6+5]));
+                memcpy(&mmc_x_float, bt_data + PACKET_OFFSET_MMC_SET_1, 4);
+                memcpy(&mmc_y_float, bt_data + PACKET_OFFSET_MMC_SET_1 + 4, 4);
+                memcpy(&mmc_z_float, bt_data + PACKET_OFFSET_MMC_SET_1 + 8, 4);
+                printf("MMC set1: X=%f, Y=%f, Z=%f\r\n",mmc_x_float, mmc_y_float, mmc_z_float);
 
-            gyr_x_float = (float)(((int16_t)(gyr_x_bytes))/GYRO_SENSITIVITY);
-            gyr_y_float = (float)(((int16_t)(gyr_y_bytes))/GYRO_SENSITIVITY);
-            gyr_z_float = (float)(((int16_t)(gyr_z_bytes))/GYRO_SENSITIVITY);
-            printf("GYR5: X=%f, Y=%f, Z=%f, N=%f\r\n", gyr_x_float, gyr_y_float, gyr_z_float, pow((pow(gyr_x_float,2) + pow(gyr_y_float,2) + pow(gyr_z_float,2)),0.5));
-        #endif
+                memcpy (&ts_mmc,bt_data + PACKET_OFFSET_MMC_SET_2 + (PACKET_MMC_SET_SIZE - TIMESTAMP_BYTES_NUM),TIMESTAMP_BYTES_NUM);
+                printf("MMC set2 TS = %llu\r\n",ts_mmc);
 
-        #ifdef BT_PACKET_PRINTS_BARO
-            memcpy(&baro_pressure_float,bt_data + PACKET_OFFSET_BARO_PRESSURE_VAL, 4); 
-            memcpy(&baro_temp_float, bt_data + PACKET_OFFSET_BARO_TEMP_VAL, 4);
-            printf("Baro: Pressure = %f, Temp = %f, pressure location = %u\r\n",baro_pressure_float, baro_temp_float,PACKET_OFFSET_BARO_PRESSURE_VAL);
-        #endif 
+                memcpy(&mmc_x_float, bt_data + PACKET_OFFSET_MMC_SET_2, 4);
+                memcpy(&mmc_y_float, bt_data + PACKET_OFFSET_MMC_SET_2 + 4, 4);
+                memcpy(&mmc_z_float, bt_data + PACKET_OFFSET_MMC_SET_2 + 8, 4);
+                printf("MMC set2: X=%f, Y=%f, Z=%f\r\n",mmc_x_float, mmc_y_float, mmc_z_float);
 
-        #ifdef BT_PACKET_PRINTS_MMC
-            memcpy (&ts_mmc,bt_data + PACKET_OFFSET_MMC_SET_1 + (PACKET_MMC_SET_SIZE - TIMESTAMP_BYTES_NUM),TIMESTAMP_BYTES_NUM);
-            printf("MMC set1 TS = %llu\r\n",ts_mmc);
+                memcpy (&ts_mmc,bt_data + PACKET_OFFSET_MMC_SET_3 + (PACKET_MMC_SET_SIZE - TIMESTAMP_BYTES_NUM),TIMESTAMP_BYTES_NUM);
+                printf("MMC set3 TS = %llu\r\n",ts_mmc);
 
-            memcpy(&mmc_x_float, bt_data + PACKET_OFFSET_MMC_SET_1, 4);
-            memcpy(&mmc_y_float, bt_data + PACKET_OFFSET_MMC_SET_1 + 4, 4);
-            memcpy(&mmc_z_float, bt_data + PACKET_OFFSET_MMC_SET_1 + 8, 4);
-            printf("MMC set1: X=%f, Y=%f, Z=%f\r\n",mmc_x_float, mmc_y_float, mmc_z_float);
+                memcpy(&mmc_x_float, bt_data + PACKET_OFFSET_MMC_SET_3, 4);
+                memcpy(&mmc_y_float, bt_data + PACKET_OFFSET_MMC_SET_3 + 4, 4);
+                memcpy(&mmc_z_float, bt_data + PACKET_OFFSET_MMC_SET_3 + 8, 4);
+                printf("MMC set3: X=%f, Y=%f, Z=%f\r\n",mmc_x_float, mmc_y_float, mmc_z_float);
 
-            memcpy (&ts_mmc,bt_data + PACKET_OFFSET_MMC_SET_2 + (PACKET_MMC_SET_SIZE - TIMESTAMP_BYTES_NUM),TIMESTAMP_BYTES_NUM);
-            printf("MMC set2 TS = %llu\r\n",ts_mmc);
+                memcpy (&ts_mmc,bt_data + PACKET_OFFSET_MMC_SET_4 + (PACKET_MMC_SET_SIZE - TIMESTAMP_BYTES_NUM),TIMESTAMP_BYTES_NUM);
+                printf("MMC set4 TS = %llu\r\n",ts_mmc);
 
-            memcpy(&mmc_x_float, bt_data + PACKET_OFFSET_MMC_SET_2, 4);
-            memcpy(&mmc_y_float, bt_data + PACKET_OFFSET_MMC_SET_2 + 4, 4);
-            memcpy(&mmc_z_float, bt_data + PACKET_OFFSET_MMC_SET_2 + 8, 4);
-            printf("MMC set2: X=%f, Y=%f, Z=%f\r\n",mmc_x_float, mmc_y_float, mmc_z_float);
+                memcpy(&mmc_x_float, bt_data + PACKET_OFFSET_MMC_SET_4, 4);
+                memcpy(&mmc_y_float, bt_data + PACKET_OFFSET_MMC_SET_4 + 4, 4);
+                memcpy(&mmc_z_float, bt_data + PACKET_OFFSET_MMC_SET_4 + 8, 4);
+                printf("MMC set4: X=%f, Y=%f, Z=%f\r\n",mmc_x_float, mmc_y_float, mmc_z_float);
+                
+                //printf("MMC set reset = %u\r\n",bt_data[PACKET_OFFSET_MMC_SET_RESET_VAL]);
+            #endif
 
-            memcpy (&ts_mmc,bt_data + PACKET_OFFSET_MMC_SET_3 + (PACKET_MMC_SET_SIZE - TIMESTAMP_BYTES_NUM),TIMESTAMP_BYTES_NUM);
-            printf("MMC set3 TS = %llu\r\n",ts_mmc);
-
-            memcpy(&mmc_x_float, bt_data + PACKET_OFFSET_MMC_SET_3, 4);
-            memcpy(&mmc_y_float, bt_data + PACKET_OFFSET_MMC_SET_3 + 4, 4);
-            memcpy(&mmc_z_float, bt_data + PACKET_OFFSET_MMC_SET_3 + 8, 4);
-            printf("MMC set3: X=%f, Y=%f, Z=%f\r\n",mmc_x_float, mmc_y_float, mmc_z_float);
-
-            memcpy (&ts_mmc,bt_data + PACKET_OFFSET_MMC_SET_4 + (PACKET_MMC_SET_SIZE - TIMESTAMP_BYTES_NUM),TIMESTAMP_BYTES_NUM);
-            printf("MMC set4 TS = %llu\r\n",ts_mmc);
-
-            memcpy(&mmc_x_float, bt_data + PACKET_OFFSET_MMC_SET_4, 4);
-            memcpy(&mmc_y_float, bt_data + PACKET_OFFSET_MMC_SET_4 + 4, 4);
-            memcpy(&mmc_z_float, bt_data + PACKET_OFFSET_MMC_SET_4 + 8, 4);
-            printf("MMC set4: X=%f, Y=%f, Z=%f\r\n",mmc_x_float, mmc_y_float, mmc_z_float);
-            
-            //printf("MMC set reset = %u\r\n",bt_data[PACKET_OFFSET_MMC_SET_RESET_VAL]);
-        #endif
-
-        #ifdef BT_PACKET_PRINTS_MAG_SET_RESET_BYTE
-            printf("mag set reset ind = 0x%02X, location = %u\r\n",bt_data[PACKET_OFFSET_MMC_SET_RESET_VAL],PACKET_OFFSET_MMC_SET_RESET_VAL);
-        #endif
-
+            #ifdef BT_PACKET_PRINTS_MAG_SET_RESET_BYTE
+                printf("mag set reset ind = 0x%02X, location = %u\r\n",bt_data[PACKET_OFFSET_MMC_SET_RESET_VAL],PACKET_OFFSET_MMC_SET_RESET_VAL);
+            #endif
+        }
     #endif
 
     /***************************************************************/
@@ -615,7 +712,10 @@ static void esp_spp_cb_L(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
             //ets_printf("1\r\n");
             ESP_LOGI(TAG_BT, "ESP_SPP_INIT_EVT");
             ESP_ERROR_LOG(esp_bt_dev_set_device_name(DEVICE_NAME));
+
+            //espose device to be visible on lists
             ESP_ERROR_LOG(esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE));
+            
             ESP_ERROR_LOG(esp_spp_start_srv(ESP_SPP_SEC_NONE, ESP_SPP_ROLE_SLAVE, 0, DEVICE_NAME));
             break;
         }
@@ -668,6 +768,9 @@ static void esp_spp_cb_L(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
             }
 
             app_ask_to_close_bt = false;
+
+            //espose device to be visible on lists
+            esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
 
             ESP_LOGI(TAG_BT, "ESP_SPP_CLOSE_EVT");
 
@@ -1020,6 +1123,31 @@ static void esp_spp_cb_L(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
                 set_connection_mode();
             }
 
+            else if ((bt_read_buff[PACKET_OFFSET_TYPE]==AES_APP_RAND1_ACK_NACK_TYPE) &&
+                    (bt_read_size == 2)  ) 
+            {
+                set_ack_nack_to_rand1(bt_read_buff[AES_APP_RAND1_ACK_NACK_RES_LOC]);
+            }
+
+
+            else if ((bt_read_buff[PACKET_OFFSET_TYPE]==AES_APP_ID_TYPE) &&
+                    (bt_read_size == AES_SEED_TOTAL_SIZE)  ) 
+            {
+                set_app_id_before_calibration(bt_read_buff);
+            }
+
+            else if ((bt_read_buff[PACKET_OFFSET_TYPE]==AES_APP_RAND1_NUM_TYPE) &&
+                    (bt_read_size == (1+AES_APP_RAND_NUM_SIZE))  ) 
+            {
+                set_app_rand1_num_to_encrypt_before_calibration((bt_read_buff+AES_APP_RAND1_NUM_START_BYTE));
+            }
+
+            else if ((bt_read_buff[PACKET_OFFSET_TYPE]==AES_APP_RAND2_NUM_ENCRYPTED_TYPE) &&
+                    (bt_read_size == (1+AES_APP_RAND_ENCRYPTED_NUM_SIZE))  ) 
+            {
+                set_app_rand2_encrypted_value_before_calibration((bt_read_buff+AES_APP_RAND2_NUM_ENCRYPTED_START_BYTE));
+            }
+
             else
             {
                 ESP_LOGE(TAG_BT_IF, "ERROR: RECEIVED UNRECOGNIZED PACKET !!!");
@@ -1072,6 +1200,10 @@ static void esp_spp_cb_L(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
         case ESP_SPP_SRV_OPEN_EVT://will occurr when the phone is the initiator and the prisonator is the discoverable
         {
             ets_printf("pairing starts\r\n");
+
+            //make the board to be invisible on devices lists
+            esp_bt_gap_set_scan_mode(ESP_BT_NON_CONNECTABLE, ESP_BT_NON_DISCOVERABLE);
+
             reset_disconnect_bt_flag();
             reason_of_bt_closed_connection = NONE_CLOSED_BT_COMMUNICATION;
             bt_not_write_flag = false;//the queue is empty for sure after spp open 
@@ -1126,6 +1258,11 @@ void calc_bt_data_to_deliver_to_other_side(void)
  *******************************************************************/
 void send_bt_data_to_deliver_to_other_side(void)
 {
+    if (is_bt_initialized == false)
+    {
+        return;
+    }
+
     #ifdef KEY_CODE_PRINTED_ON_BT_DEBUG
         for(uint8_t x=0;x<KEY_CODE_TOTAL_SIZE;x++)
         {
@@ -1279,7 +1416,7 @@ static void esp_bt_gap_cb_L(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *
  *******************************************************************/
 static esp_err_t bt_init_L(void)
 {
-    esp_err_t ret;
+    esp_err_t ret = ESP_FAIL;
 
     /***************************************************************/
     // init globals
@@ -1289,11 +1426,18 @@ static esp_err_t bt_init_L(void)
     /***************************************************************/
     // release controller memory
     /***************************************************************/
-    ret = esp_bt_controller_mem_release(ESP_BT_MODE_BLE);
-    if (ret) 
+    if (!ble_mem_released) 
     {
-        ESP_LOGE(TAG_BT, "%s controller memory release failed: %s", __func__, esp_err_to_name(ret));
-        return ESP_FAIL;
+        ret = esp_bt_controller_mem_release(ESP_BT_MODE_BLE);
+        if (ret == ESP_OK) 
+        {
+            ble_mem_released = true;  // Mark BLE memory as released
+        }
+        else if (ret != ESP_ERR_INVALID_STATE) 
+        {
+            ESP_LOGE(TAG_BT, "%s controller memory release failed: %s", __func__, esp_err_to_name(ret));
+            return ESP_FAIL;
+        }
     }
 
     /***************************************************************/

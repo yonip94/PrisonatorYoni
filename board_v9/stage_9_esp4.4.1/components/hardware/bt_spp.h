@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "esp_spp_api.h"
+#include "esp_gap_bt_api.h"
 
 /*******************************************************************/
 /*******************************************************************/
@@ -44,6 +45,7 @@ typedef enum{
 /*******************************************************************/
 /*******************************************************************/
 esp_err_t bt_init(void);
+esp_err_t bt_uinit(void);
 bt_state_t bt_get_state(void);
 esp_err_t bt_toggle(bt_toggle_t toggle);
 esp_err_t bt_send_data(uint8_t* bt_data, uint32_t size);

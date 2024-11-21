@@ -66,6 +66,7 @@ uint8_t get_type_8_8_indicator_activate(void);
 void reset_type_8_8_indicator_activate(void);
 void manager_ignore_ka(bool ignore_use_stat);
 uint8_t manager_send_last_comm(void);
+void manager_set_initial_comm(bool val);
 uint8_t manager_send_ka_ignore_or_check_flag(void);
 bool get_ready_to_resend_flag(void);
 void reset_ready_to_resend_flag(void);

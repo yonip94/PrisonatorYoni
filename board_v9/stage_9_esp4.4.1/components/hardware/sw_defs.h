@@ -26,6 +26,43 @@
 /*                          DEBUG_DEFINITIONS                      */
 /*******************************************************************/
 /*******************************************************************/
+//1  - write key on efuse blk1 and set read only
+//2  - write key on efuse blk2 and set read only
+//3  - write key on efuse blk3 and set read only
+//4  - read efuse blk1 key                                                 v
+//5  - read efuse blk2 key                                                 v
+//6  - read efuse blk3 key                                                 v
+//7  - read key, enc and dec data using ecb                                v will work up to 16byte to encrypd and decrypt
+//8  - read key, enc and dec data using cbc                                v
+//9  - genarate uint32_t rand num & 32byte rand num & header 0x15          v
+//10 - perform hmac with sha256 function                                   v
+//11 - testing hardcoded numbers on main program                           v
+//12 - perform hmac with sha256 func with unique id & data key on blk2     v
+//13 - generate (32bytes) random numbers                                   v
+//#define AES_DEBUG 13
+
+#ifdef AES_DEBUG
+    //choose number of 32 bytes rng generates on test 13
+    #define NUMBER_OF_32BYTES_RNGS                  ((uint32_t)3)
+#endif
+
+/*******************************************************************/
+//uncomment - to view aes prints on main code
+//comment -   to not view aes prints on main code
+/*******************************************************************/
+//#define ALLOW_AES_PRINTS
+
+/*******************************************************************/
+//uncomment - to perform aes process when bt communication detected
+//comment -   to not perform aes process when bt communication detected
+/*******************************************************************/
+#define AES_USAGE_BT
+
+/*******************************************************************/
+//uncomment - to perform aes process when uart communication detected
+//comment -   to not perform aes process when uart communication detected
+/*******************************************************************/
+//#define AES_USAGE_UART
 
 /*******************************************************************/
 //test the project with uart - without need to use app, but by keyboard
@@ -228,6 +265,7 @@
 #define TAG_I2C_XFER                            ("[I2C_XFER]")
 #define TAG_SPI_XFER                            ("[SPI_XFER]")
 #define TAG_STOP_ACTIONS                        ("[POWER_OFF_AND_RESETS_REASONS]")
+#define TAG_AES                                 ("[AES]")
 
 /*******************************************************************/
 /*******************************************************************/

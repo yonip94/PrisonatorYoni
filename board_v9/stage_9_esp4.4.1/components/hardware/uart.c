@@ -100,6 +100,7 @@ static uint8_t uart_data_resend[PACKET_NORM_SIZE*2] = {0x00};
 
 static uint8_t tmp_uart_calib_buff[25]={0x00};// 2*PACKET_CALIBRATION_SIZE
 static uint8_t calib_data_base_64[25*2]={0x00};// 2*PACKET_CALIBRATION_SIZE
+static uint8_t aes_data_base_64[KEY_SIZE_AES_256BIT_BYTE_SIZE*2]={0x00};
 static char data_chars_big[PACKET_CALIBRATION_SIZE*2]={'D'};  
 
 /*******************************************************************/
@@ -179,6 +180,25 @@ static void encodeblock_L( unsigned char *in, unsigned char *out, int len );
 /*              INTERFACE FUNCTIONS IMPLEMENTATION                 */
 /*******************************************************************/
 /*******************************************************************/
+void send_buff_to_app_uart_aes_only(uint8_t* buffer, uint32_t size)
+{
+    uint32_t size_aes_data_base_64=0;
+    size_aes_data_base_64=encode_L(buffer,aes_data_base_64,size);
+    for (uint32_t ind=0;ind<size_aes_data_base_64;ind++)
+    {
+        data_chars_big[ind] = aes_data_base_64[ind];
+    }
+
+    vTaskDelay(100);//todo - remove after debug - prints will never be sent on uart (only relevant data)
+
+    uart_tx_chars(UART_NUM_0, data_chars_big, size_aes_data_base_64);
+    uart_wait_tx_idle_polling(UART_NUM_0);
+    uart_tx_chars(UART_NUM_0, data_chars_next_line, 2);    
+    uart_wait_tx_idle_polling(UART_NUM_0); 
+
+    vTaskDelay(100);//todo - remove after debug - prints will never be sent on uart (only relevant data)
+}
+
 void uart_deinit(void)
 {
     // Disable UART interrupts
@@ -491,7 +511,7 @@ void uart_send_calibration_data(uint8_t* buffer)
 
     for(uint16_t ind_y=0;ind_y<(PACKET_CALIBRATION_SIZE/CALIBRATION_CABLE_BYTES_NUM_ON_PART);ind_y++)
     {
-        uart_tx_chars(UART_NUM_0, data_chars_initial_calib, 13);
+        uart_tx_chars(UART_NUM_0, data_chars_initial_calib, (15-2));
         uart_wait_tx_idle_polling(UART_NUM_0);
         data_chars[0] = 'P';
         uart_tx_chars(UART_NUM_0, data_chars, 1);
@@ -513,12 +533,12 @@ void uart_send_calibration_data(uint8_t* buffer)
         }    
         uart_tx_chars(UART_NUM_0, data_chars_next_line, 2);    
         uart_wait_tx_idle_polling(UART_NUM_0); 
-        memcpy(tmp_uart_calib_buff,buffer+(25*ind_y),25);
+        memcpy(tmp_uart_calib_buff,buffer+(CALIBRATION_CABLE_BYTES_NUM_ON_PART*ind_y),CALIBRATION_CABLE_BYTES_NUM_ON_PART);
 
         /***********************************************/
         //prepare the buffer with base64 data
         /***********************************************/
-        size_calib_data_base_64=encode_L(tmp_uart_calib_buff,calib_data_base_64,25);
+        size_calib_data_base_64=encode_L(tmp_uart_calib_buff,calib_data_base_64,CALIBRATION_CABLE_BYTES_NUM_ON_PART);
         for (uint16_t ind=0;ind<size_calib_data_base_64;ind++)
         {
             data_chars_big[ind]=calib_data_base_64[ind];
@@ -1378,12 +1398,41 @@ static void uart_get_task_L(void *arg)
                                 }
                             }
                         }
+                        
+                        else if (uart_rx_buf[PACKET_OFFSET_TYPE]==AES_APP_RAND1_ACK_NACK_TYPE)
+                        {
+                            set_ack_nack_to_rand1(uart_rx_buf[AES_APP_RAND1_ACK_NACK_RES_LOC]);
+                        }
+                        
                         break;
                     }
-                    
+                
+                    case(1+AES_APP_RAND_NUM_SIZE)://AES_SEED_TOTAL_SIZE=1+AES_APP_RAND_NUM_SIZE so insert set_app_id_before_calibration here
+                    {
+                        if (uart_rx_buf[PACKET_OFFSET_TYPE] == AES_APP_ID_TYPE)
+                        {
+                            set_app_id_before_calibration(uart_rx_buf);
+                        }
+
+                        else if (uart_rx_buf[PACKET_OFFSET_TYPE] == AES_APP_RAND1_NUM_TYPE)
+                        {
+                            set_app_rand1_num_to_encrypt_before_calibration((uart_rx_buf+AES_APP_RAND1_NUM_START_BYTE));
+                        }
+
+                        else if (uart_rx_buf[PACKET_OFFSET_TYPE] == AES_APP_RAND2_NUM_ENCRYPTED_TYPE)
+                        {
+                            set_app_rand2_encrypted_value_before_calibration((uart_rx_buf+AES_APP_RAND2_NUM_ENCRYPTED_START_BYTE));
+                        }
+                        else
+                        {
+                            ets_printf("invalid state\r\n");
+                        }
+
+                        break;
+                    }
+
                     default:
                     {
-
                         break;
                     }
                 }

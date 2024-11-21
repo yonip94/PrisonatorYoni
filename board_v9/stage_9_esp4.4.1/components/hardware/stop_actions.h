@@ -48,6 +48,7 @@
 #define RESET_IDLE_RECONNECT_TOOK_TOO_LONG										((uint8_t)(0x0C))
 #define RESET_DISCONNECTION_TIME_TOOK_TOO_LONG                                  ((uint8_t)(0x0D))
 #define RESET_BECAUSE_DISCONNECTION_MODE_IS_NOT_ALLOWED_FROM_APP                ((uint8_t)(0x0E))
+#define RESET_BECAUSE_AES_OPERATION_FAILED                                      ((uint8_t)(0x0F))
 
 /*******************************************************************/
 // general mask and indicators for communications history when power off or reset 

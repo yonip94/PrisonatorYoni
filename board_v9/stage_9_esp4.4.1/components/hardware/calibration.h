@@ -19,6 +19,7 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "nvs_flash.h"
+#include "prisonator_aes.h"
 
 /*******************************************************************/
 /*******************************************************************/
@@ -61,6 +62,10 @@ bool is_calibration_complete(void);
 void set_calib_done_flag(bool way_to_send);
 void set_mag_calib_done_flag(bool way_to_send);
 uint8_t calibration_send_interrupt_flag(void);
+void set_app_id_before_calibration(uint8_t* app_id);
+void set_ack_nack_to_rand1(uint8_t res);
+void set_app_rand1_num_to_encrypt_before_calibration(uint8_t* num_buffer);
+void set_app_rand2_encrypted_value_before_calibration(uint8_t* num_buffer);
 void reset_calib_counter_2d_array_uart(void);
 void reset_mag_calib_counter_2d_array_uart(void);
 void reset_calib_counter_2d_array_bt(void);

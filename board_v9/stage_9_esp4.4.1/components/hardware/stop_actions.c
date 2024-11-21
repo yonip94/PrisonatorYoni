@@ -228,7 +228,12 @@ void print_stop_actions_reasons(void)
         {
             ESP_LOGI(TAG_STOP_ACTIONS, "    %u HARD RESET, RESET INSTEAD OF DISCONNECTION WHEN DETECTED AND NOT ALLOWED TO ENTER, PSN: 0x%02X%02X%02X",counter_order,current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE+2],current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE+1],current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE]);
         }
-		
+
+        else if((current_stop_action_rst_buffer[stop_action_ind]&REASON_OF_STOP_ACTION_MASK)==RESET_BECAUSE_AES_OPERATION_FAILED)
+        {
+            ESP_LOGI(TAG_STOP_ACTIONS, "    %u HARD RESET, AES OPERATION FAILED, PSN: 0x%02X%02X%02X",counter_order,current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE+2],current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE+1],current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE]);
+        }
+
         if((current_stop_action_rst_buffer[stop_action_ind]&BOARD_STOPPED_GETTING_KA_MASK)==BOARD_STOPPED_GETTING_KA_MASK)
         {
             ESP_LOGI(TAG_STOP_ACTIONS, "        BOARD STOPPED GET KA");
@@ -294,7 +299,7 @@ void print_stop_actions_reasons(void)
 		
         else if((current_stop_action_rst_buffer[stop_action_ind]&REASON_OF_STOP_ACTION_MASK)==RESET_UNEXPECTED_CRASH_FROM_OTHER_SIDE)
         {
-            ESP_LOGI(TAG_STOP_ACTIONS, "    %u HARD RESET,  UNEXPECTED CRASH FROM OTHER SIDE, PSN: 0x%02X%02X%02X",counter_order,current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE+2],current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE+1],current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE]);
+            ESP_LOGI(TAG_STOP_ACTIONS, "    %u HARD RESET, UNEXPECTED CRASH FROM OTHER SIDE, PSN: 0x%02X%02X%02X",counter_order,current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE+2],current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE+1],current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE]);
         }
 
         else if((current_stop_action_rst_buffer[stop_action_ind]&REASON_OF_STOP_ACTION_MASK)==RESET_IDLE_RECONNECT_TOOK_TOO_LONG)
@@ -314,6 +319,11 @@ void print_stop_actions_reasons(void)
         else if((current_stop_action_rst_buffer[stop_action_ind]&REASON_OF_STOP_ACTION_MASK)==RESET_BECAUSE_DISCONNECTION_MODE_IS_NOT_ALLOWED_FROM_APP)
         {
             ESP_LOGI(TAG_STOP_ACTIONS, "    %u HARD RESET, RESET INSTEAD OF DISCONNECTION WHEN DETECTED AND NOT ALLOWED TO ENTER, PSN: 0x%02X%02X%02X",counter_order,current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE+2],current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE+1],current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE]);
+        }
+
+        else if((current_stop_action_rst_buffer[stop_action_ind]&REASON_OF_STOP_ACTION_MASK)==RESET_BECAUSE_AES_OPERATION_FAILED)
+        {
+            ESP_LOGI(TAG_STOP_ACTIONS, "    %u HARD RESET, AES OPERATION FAILED, PSN: 0x%02X%02X%02X",counter_order,current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE+2],current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE+1],current_stop_action_rst_buffer[(stop_action_ind)+STOP_ACTIONS_PACKET_SN_START_BYTE]);
         }
 
         if((current_stop_action_rst_buffer[stop_action_ind]&BOARD_STOPPED_GETTING_KA_MASK)==BOARD_STOPPED_GETTING_KA_MASK)

@@ -685,7 +685,6 @@ void run_prisonator(void)
     // start tasks 
     /***************************************************************/
     ESP_ERROR_LOG(start_tasks_L());
-
 }
 
 /****************************************************************//**
@@ -915,6 +914,18 @@ bool is_in_nav(void)
 uint32_t manager_send_packet_sn(void)
 {
     return(packet_sn);
+}
+
+void manager_set_initial_comm(bool val)
+{
+    if (val == VIA_BT)
+    {
+        last_communication_detected = BT_COMMUNICATION_DETECTED;
+    }
+    else
+    {
+        last_communication_detected = UART_COMMUNICATION_DETECTED;
+    }
 }
 
 /****************************************************************//**
@@ -2084,6 +2095,15 @@ static void manager_task_L(void *arg)
             /*******************************************************/
             else if (true == is_uart_connect())
             {
+                //kill bt when uart is detected
+                if (ESP_OK!=bt_uinit())
+                {
+                    ets_printf("Failed to uinit bt\r\n",esp_timer_get_time());
+
+                    //make the board at least to be invisible on devices lists
+                    esp_bt_gap_set_scan_mode(ESP_BT_NON_CONNECTABLE, ESP_BT_NON_DISCOVERABLE);
+                }
+
                 last_communication_detected = UART_COMMUNICATION_DETECTED;
                 if (disabling_bt_cause_uart_detected_flag == 1)
                 {
@@ -2176,6 +2196,12 @@ static void manager_task_L(void *arg)
             /*******************************************************/
             else if(false == is_uart_connect()) 
             {
+                //init bt when disconnect mode ongoing
+                if (ESP_OK!=bt_init())
+                {
+                    ets_printf("Failed to init bt\r\n",esp_timer_get_time());
+                }
+
                 /***************************************************/
                 // send packet through BT
                 /***************************************************/
@@ -2204,6 +2230,9 @@ static void manager_task_L(void *arg)
                         disconnect_bt_flag = false;
 
                         ets_printf("BT ready to:\r\n 1 - catch paring from disconnection mode\r\n 2 - get navigation cmd\r\n");
+                        
+                        //expose device on bt lists
+                        esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
                     }
 
                     /***********************************************/
@@ -2226,6 +2255,10 @@ static void manager_task_L(void *arg)
                 else if (BT_ENABLED_AND_CONNECTED == bt_get_state())
                 {
                     last_communication_detected = BT_COMMUNICATION_DETECTED;
+
+                    //make the board to be invisible on devices lists when already connected to any phone
+                    esp_bt_gap_set_scan_mode(ESP_BT_NON_CONNECTABLE, ESP_BT_NON_DISCOVERABLE);
+
                     time_to_bt_reconnect_flag = 0;
 
                     //if power off pressed - keep idle flag on and change the packets to be sent like "not in idle anymore"
@@ -2323,6 +2356,9 @@ static void manager_task_L(void *arg)
                 /***************************************************/
                 else
                 {
+	                //expose device on bt lists
+	                esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
+
                     if (last_communication_detected==BT_COMMUNICATION_DETECTED)
                     {
                         #ifdef FAULT_BOARD_LEDS_DEBUG
@@ -2472,6 +2508,9 @@ static void manager_task_L(void *arg)
             ESP_LOGI(TAG_MAN, "RE-ENABLE BT");
             ets_printf("BT connected to catch paring from idle mode\r\n");
 
+            //expose device on bt lists
+            esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
+            
             time_to_bt_reconnect = esp_timer_get_time();
             time_to_bt_reconnect_flag = 1;
 

@@ -19,6 +19,15 @@ Each version should pass the following tests before it can be released:
 5. During long navigation (10 minutes) there are no packet losses and no resend requests
 
 ===================================================================================================
+version 0.9.26  (stage_9_esp4.4.1):
+  - adding aes support
+  - adding uinit bt:
+  - adding security support of bt:
+  	when cable connected bt peripheral will be uinit
+	when bt is connected to device - the mac will not appear on bt list of any other
+	when on disconnection mode, not paired, bt will be exposed to lists 
+===================================================================================================
+
 ===================================================================================================
 version 0.9.25  (stage_9_esp4.4.1):
   - when board connected with cable to any power source and power button is pressed, 

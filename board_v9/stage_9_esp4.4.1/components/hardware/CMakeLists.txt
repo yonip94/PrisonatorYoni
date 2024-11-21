@@ -1,6 +1,6 @@
 idf_component_register( SRCS "manager.c" "gpio.c" "spi_xfer.c" "gpio_decoder.c" "HA_pulse_sync.c" "io_expander_pcal6408a.c"
                              "mmc5983ma.c" "i2c_xfer.c" "bt_spp.c" "ms5611.c" "bmi088.c" "checksum_calc.c" "stop_actions.c"
-                             "calibration.c" "led.c" "power.c" "packet_loss.c" "battery.c" "pressure_sensor.c"
+                             "calibration.c" "led.c" "power.c" "packet_loss.c" "battery.c" "pressure_sensor.c" "prisonator_aes.c"
                              "ahrs_env.c" "uart.c" "resend_packet_method.c" "connection_mode.c" "prisonator_external_flash.c"
                         INCLUDE_DIRS "."
                         REQUIRES AHRS bt nvs_flash app_update esp_adc_cal

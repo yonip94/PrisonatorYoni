@@ -111,6 +111,11 @@
 //#define IMU_5_ACC_SF_Y_INDEX            5893
 //#define IMU_5_ACC_SF_Z_INDEX            5909
 
+#define AES_BEGIN_TIMEOUT_US                ((uint64_t)15000000)
+#define CHALLENGE_RESPONSE_TIMEOUT_US_BT    ((uint64_t)800000)
+#define CHALLENGE_RESPONSE_TIMEOUT_US_UART  ((uint64_t)5000000)
+
+
 /*******************************************************************/
 /*******************************************************************/
 /*               TYPES & LOCAL VARIABLES & CONSTANTS               */
@@ -140,6 +145,19 @@ static bool zeros_matrix_flag = false;
 //static ahrs_data_t ahrs_data[6] = {0};
 static ahrs_data_t ahrs_data[1] = {0};
 
+static uint8_t app_id_aes[AES_SEED_ID_SIZE] ={0};
+static bool is_app_id_was_sent = false;
+static esp_efuse_block_t block_id_to_read_key = EFUSE_BLK0;
+
+static bool is_rand1_was_sent = false;
+static uint8_t rand1_number[AES_APP_RAND_NUM_SIZE] = {0};
+static uint8_t rand1_ack_nack_res = AES_NACK;
+static bool is_rand1_ack_nack_res_arrived = false;
+
+static uint8_t rand2_encrypted_number[AES_APP_RAND_NUM_SIZE] = {0};
+static bool is_rand2_encrypted_was_send = false;
+
+
 /*******************************************************************/
 /*******************************************************************/
 /*                 LOCAL FUNCTIONS DECLARATION                     */
@@ -148,12 +166,59 @@ static ahrs_data_t ahrs_data[1] = {0};
 static esp_err_t send_calibration_data_L(bool way_to_send);
 static void calibration_check_task_L(void *arg);
 static esp_err_t save_calibration_data_in_NVS_L(void);
+static void perform_aes_operations(bool communication_detection);
 
 /*******************************************************************/
 /*******************************************************************/
 /*              INTERFACE FUNCTIONS IMPLEMENTATION                 */
 /*******************************************************************/
 /*******************************************************************/
+
+void set_app_rand2_encrypted_value_before_calibration(uint8_t* num_buffer)
+{
+    if (is_rand2_encrypted_was_send == false)
+    {
+        if (AES_APP_RAND_NUM_SIZE <= PLAIN_CIPHER_BYTE_SIZE)
+        {
+            memset(&rand2_encrypted_number,0x00,AES_APP_RAND_NUM_SIZE);
+            memcpy(&rand2_encrypted_number,num_buffer,(AES_APP_RAND_NUM_SIZE));
+            is_rand2_encrypted_was_send = true;
+        }
+    }
+}
+
+void set_ack_nack_to_rand1(uint8_t res)
+{
+    if (is_rand1_ack_nack_res_arrived == false)
+    {
+        rand1_ack_nack_res = res;
+        is_rand1_ack_nack_res_arrived = true;
+    }
+}
+
+void set_app_rand1_num_to_encrypt_before_calibration(uint8_t* num_buffer)
+{
+    if (is_rand1_was_sent == false)
+    {
+        if (AES_APP_RAND_NUM_SIZE <= PLAIN_CIPHER_BYTE_SIZE)
+        {
+            memset(&rand1_number,0x00,AES_APP_RAND_NUM_SIZE);
+            memcpy(&rand1_number,num_buffer,AES_APP_RAND_NUM_SIZE);
+            is_rand1_was_sent = true;
+        }
+    }
+}
+
+void set_app_id_before_calibration(uint8_t* app_id)
+{
+    if (is_app_id_was_sent == false)
+    {
+        memcpy(&app_id_aes,app_id+AES_SEED_ID_START_BYTE,AES_SEED_ID_SIZE);
+        set_iv_vector(app_id+AES_SEED_IV_START_BYTE);
+        block_id_to_read_key = (esp_efuse_block_t)(app_id[AES_SEED_BLK_START_BYTE]);
+        is_app_id_was_sent = true;
+    }
+}
 
 /****************************************************************//**
  * @brief   Init & open NVS
@@ -355,7 +420,20 @@ esp_err_t calibration_after_powerup(void)
             ESP_LOGI(TAG_CAL, "WAITING FOR UART / BT CONNECTION");
         }
         vTaskDelay(CONNECTION_WAIT_MS);
+    }
+    
+    /***************************************************************/
+    // perform the aes operation only in the beggining of the connection,
+    // when enter and exit disconnection ot type 8,8 
+    // do not enter the function 
+    /***************************************************************/
 
+    //i feel it gonna be asked - all this implementation will go to garbage if accept to this:
+    //condition to enter aes function is when app sends the id - otherwise act ordinary) 
+    if(manager_send_packet_sn() == 0)
+    {
+        manager_set_initial_comm(way_to_send);
+        perform_aes_operations(way_to_send);
     }
 
     /***************************************************************/
@@ -1016,7 +1094,10 @@ static void calibration_check_task_L(void *arg)
     /***************************************************************/
     // run task loop
     /***************************************************************/
-    ESP_LOGI(TAG_CAL, "START CALIBRATION CHECK TASK");
+    if (manager_send_last_comm()!=UART_COMMUNICATION_DETECTED)
+    {
+        ESP_LOGI(TAG_CAL, "START CALIBRATION CHECK TASK");
+    }
 
     //TickType_t xLastWakeTime;
     //const TickType_t xFrequency = (1000 / portTICK_PERIOD_MS);
@@ -1291,3 +1372,476 @@ static esp_err_t save_calibration_data_in_NVS_L(void)
     return ESP_OK;   
 }
 
+static void perform_aes_operations(bool communication_detection)
+{
+    uint64_t challenge_response_timeout = 0;
+    uint64_t aes_operation_start_time = 0;
+    if (communication_detection == VIA_BT)
+    {
+        #ifndef AES_USAGE_BT
+            return;
+        #endif
+        challenge_response_timeout = CHALLENGE_RESPONSE_TIMEOUT_US_BT;
+    }
+    else
+    {
+        #ifndef AES_USAGE_UART
+            return;
+        #endif
+        challenge_response_timeout = CHALLENGE_RESPONSE_TIMEOUT_US_UART;
+    }
+
+    #ifdef ALLOW_AES_PRINTS
+        ESP_LOGI(TAG_CAL, "STARTING WITH AES OPERATION");
+    #endif
+
+    bool is_stage_pass = false;
+    bool is_stage_process_pass = false;
+    uint8_t private_key_to_aes[KEY_SIZE_AES_256BIT_BYTE_SIZE] = {0};
+    uint8_t ack_nack_buffer_to_send[AES_ACK_NACK_TOTAL_SIZE]={0};//[0] - type, [1] - res (0 is nack, 1 is ack)
+    uint64_t aes_operation_timeout = esp_timer_get_time();
+
+    //stage 1 - get the id from App
+    memset(app_id_aes, 0x00, sizeof(app_id_aes));
+    is_app_id_was_sent = false;
+    while (esp_timer_get_time()-aes_operation_timeout<=AES_BEGIN_TIMEOUT_US)
+    {
+        if (is_app_id_was_sent == true)
+        {
+            is_stage_pass = true;
+            aes_operation_start_time = esp_timer_get_time();
+            break;
+        }
+
+        vTaskDelay(10);
+    }
+
+    //stage 1 - process data 
+    if (is_stage_pass == true)
+    {
+        if ( (block_id_to_read_key == EFUSE_BLK1) ||
+             (block_id_to_read_key == EFUSE_BLK2) ||
+             (block_id_to_read_key == EFUSE_BLK3)   )
+        {
+            uint8_t read_key[KEY_SIZE_AES_256BIT_BYTE_SIZE];
+            if (true!=prisonator_aes_read_key_on_efuse(block_id_to_read_key,read_key,KEY_SIZE_AES_256BIT_BYTE_SIZE))
+            {
+                #ifdef ALLOW_AES_PRINTS
+                    ESP_LOGE(TAG_CAL, "FAILED TO GET EFUSE KEY ON BLOCK => %u",(uint8_t)(block_id_to_read_key));
+                #endif
+            }
+            else
+            {
+                //generate private key 
+                prisonator_aes_hmac_sha256(read_key,(size_t)(KEY_SIZE_AES_256BIT_BYTE_SIZE),app_id_aes,(size_t)(AES_SEED_ID_SIZE),private_key_to_aes);
+
+                #ifdef ALLOW_AES_PRINTS
+                    ESP_LOGI(TAG_CAL, "APP ID = ");
+                    for (int i = 0; i < sizeof(app_id_aes); i++) 
+                    {
+                        ets_printf("%02X,", app_id_aes[i]);
+                    }
+                    ets_printf("\n");
+
+                    uint8_t current_iv_vector[IV_VECTOR_BYTE_SIZE]={0};
+                    memset(current_iv_vector,0x00,IV_VECTOR_BYTE_SIZE);
+                    get_iv_vector(current_iv_vector);
+                    ESP_LOGI(TAG_CAL, "IV VECTOR = ");
+                    for (int i = 0; i < sizeof(current_iv_vector); i++) 
+                    {
+                        ets_printf("%02X,", current_iv_vector[i]);
+                    }
+                    ets_printf("\n");
+
+                    ESP_LOGI(TAG_CAL, "KEY BLK %u = ",(uint8_t)(block_id_to_read_key));
+                    for (int i = 0; i < sizeof(read_key); i++) 
+                    {
+                        ets_printf("%02X,", read_key[i]);
+                    }
+                    ets_printf("\n");
+
+                    ESP_LOGI(TAG_CAL, "PRIVATE KEY FOR AES = ");
+                    for (int i = 0; i < sizeof(private_key_to_aes); i++)
+                    {
+                        ets_printf("%02X,", private_key_to_aes[i]);
+                    }
+                    ets_printf("\n");
+                #endif
+
+                is_stage_process_pass = true;
+            }
+        }
+    }
+
+    //stage 1 - check results and act in accordance
+    ack_nack_buffer_to_send[AES_ACK_NACK_HEADER_START_BYTE]=AES_APP_ID_ACK_NACK_TYPE;
+    if ((is_stage_pass == true) && (is_stage_process_pass == true))
+    {
+        ack_nack_buffer_to_send[1]=AES_ACK;
+
+        #ifdef ALLOW_AES_PRINTS
+            ESP_LOGI(TAG_CAL, "BOARD SENDS ACK TO APP ID AND BLK NUMBER = ");
+        #endif
+
+        if (communication_detection == VIA_BT)
+        {
+            bt_send_data(ack_nack_buffer_to_send,AES_ACK_NACK_TOTAL_SIZE);
+        }
+        else
+        {
+            send_buff_to_app_uart_aes_only(ack_nack_buffer_to_send,AES_ACK_NACK_TOTAL_SIZE);
+        }
+    }
+
+    else
+    {
+        ack_nack_buffer_to_send[AES_ACK_NACK_RESULT_START_BYTE]=AES_NACK;
+
+        #ifdef ALLOW_AES_PRINTS
+            ESP_LOGE(TAG_CAL, "BOARD SENDS NACK TO APP ID AND BLK NUMBER = ");
+        #endif
+
+        if (communication_detection == VIA_BT)
+        {
+            bt_send_data(ack_nack_buffer_to_send,AES_ACK_NACK_TOTAL_SIZE);
+        }
+        else
+        {
+            send_buff_to_app_uart_aes_only(ack_nack_buffer_to_send,AES_ACK_NACK_TOTAL_SIZE);
+        }
+
+        set_hard_reset_flag(RESET_BECAUSE_AES_OPERATION_FAILED);
+        hard_reset();
+    }
+
+    //stage 2 - get the rand1 num from App
+    is_stage_pass = false;
+    is_rand1_was_sent = false;
+    while (esp_timer_get_time()-aes_operation_start_time<=challenge_response_timeout)
+    {
+        if (is_rand1_was_sent == true)
+        {
+            is_stage_pass = true;
+            break;
+        }
+
+        vTaskDelay(10);
+    }
+
+    //stage 2 - process data - prepare buff to send and send to app
+    uint8_t encrypted_data_res[PLAIN_CIPHER_BYTE_SIZE+1];
+    if (is_stage_pass == true)
+    {
+        memset(encrypted_data_res, 0, sizeof(encrypted_data_res)); 
+        encrypted_data_res[PACKET_OFFSET_TYPE]=AES_APP_RAND1_NUM_RES_TYPE;
+        if (ESP_OK!=prisonator_aes_encryption_cbc(rand1_number,PLAIN_CIPHER_BYTE_SIZE,private_key_to_aes,KEY_SIZE_AES_256BIT_BYTE_SIZE,encrypted_data_res+1))
+        {
+
+        }
+        else
+        {
+            #ifdef ALLOW_AES_PRINTS
+                ESP_LOGI(TAG_CAL, "APP RAND1 HEX NUMBER = ");
+                for (int i = 0; i < sizeof(rand1_number); i++) 
+                {
+                    ets_printf("%02X,", rand1_number[i]);
+                }
+                ets_printf("\n");
+
+                ESP_LOGI(TAG_CAL, "PRIVATE KEY FOR AES = ");
+                for (int i = 0; i < sizeof(private_key_to_aes); i++) 
+                {
+                    ets_printf("%02X,", private_key_to_aes[i]);
+                }
+                ets_printf("\n");
+
+                ESP_LOGI(TAG_CAL, "ENCRYPTED RAND1 CBC WITH HEADER = ");
+                for (int i = 0; i < sizeof(encrypted_data_res); i++) 
+                {
+                    ets_printf("%02X,", encrypted_data_res[i]);
+                }
+                ets_printf("\r\n");
+            #endif
+
+            #ifdef ALLOW_AES_PRINTS
+                ESP_LOGI(TAG_CAL, "BOARD SENDS ENCRYPTED RAND1 CBC TO APP = ");
+            #endif
+
+            if (communication_detection == VIA_BT)
+            {
+                bt_send_data(encrypted_data_res,sizeof(encrypted_data_res));
+            }
+            else
+            {
+                send_buff_to_app_uart_aes_only(encrypted_data_res,sizeof(encrypted_data_res));
+            } 
+        }
+    }
+
+    else
+    {
+        memset(encrypted_data_res, 0, sizeof(encrypted_data_res)); 
+        encrypted_data_res[PACKET_OFFSET_TYPE]=AES_APP_RAND1_NUM_RES_TYPE;
+        #ifdef ALLOW_AES_PRINTS
+            ESP_LOGE(TAG_CAL, "BOARD SENDS NACK TO APP BECAUSE RANDOM1 NUMBER WAS NOT ARRIVED");
+        #endif
+
+        if (communication_detection == VIA_BT)
+        {
+            bt_send_data(encrypted_data_res,sizeof(encrypted_data_res));
+        }
+        else
+        {
+            send_buff_to_app_uart_aes_only(encrypted_data_res,sizeof(encrypted_data_res));
+        }
+        set_hard_reset_flag(RESET_BECAUSE_AES_OPERATION_FAILED);
+        hard_reset();
+    }
+
+    //stage 3 - wait for ack or nack from app about rand1 encrypted
+    rand1_ack_nack_res = AES_NACK;
+    is_rand1_ack_nack_res_arrived = false;
+    while (esp_timer_get_time()-aes_operation_start_time<=challenge_response_timeout)
+    {
+        if (is_rand1_ack_nack_res_arrived == true)
+        {
+            break;
+        }
+
+        vTaskDelay(10);
+    }
+
+    //stage 3 - prepare rand2 buffer to send to app according the rand1 ack nack result
+    uint8_t rand2_buffer_to_send[1+AES_APP_RAND_NUM_SIZE]={0};
+    memset(rand2_buffer_to_send,0x00,(1+AES_APP_RAND_NUM_SIZE));
+    rand2_buffer_to_send[PACKET_OFFSET_TYPE]=AES_APP_RAND2_NUM_TYPE;
+    
+    //stage 3 - if rand1 no response was gotten, or nack arrived
+    if((is_rand1_ack_nack_res_arrived == false) ||
+       (rand1_ack_nack_res != AES_ACK)            )
+    {
+        //stage 2 - if ACK was not gotten - send nack on type AES_APP_RAND1_ACK_NACK_TYPE and reset
+        if (is_rand1_ack_nack_res_arrived == false)
+        {
+            #ifdef ALLOW_AES_PRINTS
+                ESP_LOGE(TAG_CAL, "BOARD DIDNT GET ANY ACK NACK FROM APP ABOUT ITS RAND1 ENCRYPTION");
+            #endif
+        }
+
+        //stage 2 - if ACK was incompatible - send nack on type AES_APP_RAND1_ACK_NACK_TYPE and reset
+        else
+        {
+            #ifdef ALLOW_AES_PRINTS
+                ESP_LOGE(TAG_CAL, "APP DOESNT AGREE WITH BOARD RAND1 DECRYPTION, BOARD SENDS NACK TO APP");
+            #endif
+        }
+
+        if (communication_detection == VIA_BT)
+        {
+            bt_send_data(rand2_buffer_to_send,sizeof(rand2_buffer_to_send));
+        }
+        else
+        {
+            send_buff_to_app_uart_aes_only(rand2_buffer_to_send,sizeof(rand2_buffer_to_send));
+        }
+        set_hard_reset_flag(RESET_BECAUSE_AES_OPERATION_FAILED);
+        hard_reset();
+    }
+
+    //stage 3 - if ACK was gotten send to the app rand2 number
+    else
+    {
+        
+
+        #ifdef ALLOW_AES_PRINTS
+            ESP_LOGI(TAG_CAL, "APP AGREE WITH BOARD RAND1 DECRYPTION, BOARD SENDS GENERATES AND SEND RAND2 TO APP");
+        #endif
+
+        prisonator_aes_generate_random_buff(rand2_buffer_to_send+1,AES_APP_RAND_NUM_SIZE);
+
+        #ifdef AES_DEBUG
+            if(AES_DEBUG == 11)
+            {
+                rand2_buffer_to_send[1]  = 0xcc;
+                rand2_buffer_to_send[2]  = 0x32;
+                rand2_buffer_to_send[3]  = 0xc4;
+                rand2_buffer_to_send[4]  = 0xf1;
+                rand2_buffer_to_send[5]  = 0xff;
+                rand2_buffer_to_send[6]  = 0x39;
+                rand2_buffer_to_send[7]  = 0x87;
+                rand2_buffer_to_send[8]  = 0xea;
+                rand2_buffer_to_send[9]  = 0x11;
+                rand2_buffer_to_send[10] = 0x08;
+                rand2_buffer_to_send[11] = 0x66;
+                rand2_buffer_to_send[12] = 0x10;
+                rand2_buffer_to_send[13] = 0x1c;
+                rand2_buffer_to_send[14] = 0x9a;
+                rand2_buffer_to_send[15] = 0x42;
+                rand2_buffer_to_send[16] = 0x93;
+                rand2_buffer_to_send[17] = 0xf3;
+                rand2_buffer_to_send[18] = 0x10;
+                rand2_buffer_to_send[19] = 0x33;
+                rand2_buffer_to_send[20] = 0x80;
+                rand2_buffer_to_send[21] = 0x59;
+                rand2_buffer_to_send[22] = 0x8d;
+                rand2_buffer_to_send[23] = 0x84;
+                rand2_buffer_to_send[24] = 0x09;
+                rand2_buffer_to_send[25] = 0x82;
+                rand2_buffer_to_send[26] = 0x71;
+                rand2_buffer_to_send[27] = 0xc7;
+                rand2_buffer_to_send[28] = 0x40;
+                rand2_buffer_to_send[29] = 0xb8;
+                rand2_buffer_to_send[30] = 0x12;
+                rand2_buffer_to_send[31] = 0xab;
+                rand2_buffer_to_send[32] = 0x5a;
+            }
+        #endif
+
+        #ifdef ALLOW_AES_PRINTS
+            ESP_LOGI(TAG_CAL, "RAND2 HEX NUMBER + HEADER = ");
+            for (int i = 0; i < sizeof(rand2_buffer_to_send); i++) 
+            {
+                ets_printf("%02X,", rand2_buffer_to_send[i]);
+            }
+            ets_printf("\n");
+
+            ESP_LOGI(TAG_CAL, "BOARD SENDS TO APP RAND2 HEX NUMBER + HEADER = ");
+        #endif
+
+        if (communication_detection == VIA_BT)
+        {
+            bt_send_data(rand2_buffer_to_send,sizeof(rand2_buffer_to_send));
+        }
+        else
+        {
+            send_buff_to_app_uart_aes_only(rand2_buffer_to_send,sizeof(rand2_buffer_to_send));
+        }
+    }
+    
+    //stage 4 - wait for encrypted rand2 number from app
+    is_rand2_encrypted_was_send = false;
+    while (esp_timer_get_time()-aes_operation_start_time<=challenge_response_timeout)
+    {
+        if (is_rand2_encrypted_was_send == true)
+        {
+            break;
+        }
+
+        vTaskDelay(10);
+    }
+
+    //uint64_t precess_time = esp_timer_get_time();
+    //ets_printf("precess_time = %llu\r\n",precess_time-aes_operation_start_time);
+
+    //stage 4 - if rand2 encrypted was not arrived - send nack on type AES_RAND2_BOARD_ACK_NACK_TYPE and reset
+    if (is_rand2_encrypted_was_send == false)
+    {
+        ack_nack_buffer_to_send[AES_ACK_NACK_HEADER_START_BYTE]=AES_RAND2_BOARD_ACK_NACK_TYPE;
+        ack_nack_buffer_to_send[AES_ACK_NACK_RESULT_START_BYTE]=AES_NACK;
+
+        #ifdef ALLOW_AES_PRINTS
+            ESP_LOGE(TAG_CAL, "BOARD SENDS NACK TO APP BECAUSE ENCRYPTED RANDOM2 NUMBER WAS NOT ARRIVED");
+        #endif
+
+        if (communication_detection == VIA_BT)
+        {
+            bt_send_data(ack_nack_buffer_to_send,AES_ACK_NACK_TOTAL_SIZE);
+        }
+        else
+        {
+            send_buff_to_app_uart_aes_only(ack_nack_buffer_to_send,AES_ACK_NACK_TOTAL_SIZE);
+        }
+        set_hard_reset_flag(RESET_BECAUSE_AES_OPERATION_FAILED);
+        hard_reset();
+    }
+
+    //stage 4 - process decrypted rand2, compare with rand2, send ack nack in accordance
+    uint8_t decrypted_data_res[AES_APP_RAND_NUM_SIZE];
+    memset(decrypted_data_res, 0x00, sizeof(decrypted_data_res)); 
+    ack_nack_buffer_to_send[AES_ACK_NACK_HEADER_START_BYTE]=AES_RAND2_BOARD_ACK_NACK_TYPE;
+    ack_nack_buffer_to_send[AES_ACK_NACK_RESULT_START_BYTE]=AES_NACK;
+    if (ESP_OK!=prisonator_aes_decryption_cbc(rand2_encrypted_number,sizeof(rand2_encrypted_number),private_key_to_aes,KEY_SIZE_AES_256BIT_BYTE_SIZE,decrypted_data_res))
+    {
+
+    }
+    else
+    {
+        #ifdef ALLOW_AES_PRINTS
+            ESP_LOGI(TAG_CAL, "ENCRYPTED RAND2 = ");
+            for (int i = 0; i < sizeof(rand2_encrypted_number); i++) 
+            {
+                ets_printf("%02X,", rand2_encrypted_number[i]);
+            }
+            ets_printf("\n");
+
+            ESP_LOGI(TAG_CAL, "PRIVATE KEY = ");
+            for (int i = 0; i < sizeof(private_key_to_aes); i++) 
+            {
+                ets_printf("%02X,", private_key_to_aes[i]);
+            }
+            ets_printf("\n");
+
+            ESP_LOGI(TAG_CAL, "DECRYPTED RAND2 CBC HEX = ");
+            for (int i = 0; i < sizeof(decrypted_data_res); i++) 
+            {
+                ets_printf("%02X,", decrypted_data_res[i]);
+            }
+            ets_printf("\r\n");
+
+            ESP_LOGI(TAG_CAL, "RAND2 REAL NUMBER WITH HEADER = ");
+            for (int i = 0; i < sizeof(rand2_buffer_to_send); i++) 
+            {
+                ets_printf("%02X,", rand2_buffer_to_send[i]);
+            }
+            ets_printf("\r\n");
+        #endif
+
+        uint8_t rand2_without_header[AES_APP_RAND_NUM_SIZE] = {0};
+        memset(&rand2_without_header,0x00,AES_APP_RAND_NUM_SIZE);
+        memcpy(&rand2_without_header,&rand2_buffer_to_send[1],AES_APP_RAND_NUM_SIZE);
+
+        #ifdef ALLOW_AES_PRINTS
+            ESP_LOGI(TAG_CAL, "RAND2 REAL NUMBER WITHOUT HEADER = ");
+            for (int i = 0; i < sizeof(rand2_without_header); i++) 
+            {
+                ets_printf("%02X,", rand2_without_header[i]);
+            }
+            ets_printf("\r\n");
+        #endif
+
+        if (0 == memcmp(&decrypted_data_res,&rand2_without_header,AES_APP_RAND_NUM_SIZE))
+        {
+            ack_nack_buffer_to_send[1]=AES_ACK;
+        }
+        else
+        {
+
+        }
+    }
+
+    #ifdef ALLOW_AES_PRINTS
+        if (ack_nack_buffer_to_send[AES_ACK_NACK_RESULT_START_BYTE]==AES_NACK)
+        {
+            ESP_LOGE(TAG_CAL, "BOARD SENDS NACK TO APP - THE ARRIVED ENCRYPTED RANDOM2 WAS DECRYPTED AND != REAL RANDOM2 NUMBER");
+        }
+        else
+        {
+            ESP_LOGI(TAG_CAL, "BOARD SENDS ACK TO APP - THE ARRIVED ENCRYPTED RANDOM2 WAS DECRYPTED AND = REAL RANDOM2 NUMBER");
+        }
+    #endif
+
+    if (communication_detection == VIA_BT)
+    {
+        bt_send_data(ack_nack_buffer_to_send,AES_ACK_NACK_TOTAL_SIZE);
+    }
+    else
+    {
+        send_buff_to_app_uart_aes_only(ack_nack_buffer_to_send,AES_ACK_NACK_TOTAL_SIZE);
+    }
+
+    if (ack_nack_buffer_to_send[AES_ACK_NACK_RESULT_START_BYTE]==AES_NACK)
+    {
+        set_hard_reset_flag(RESET_BECAUSE_AES_OPERATION_FAILED);
+        hard_reset();
+    }
+}

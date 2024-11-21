@@ -80,4 +80,5 @@ uint8_t is_uart_send_task_on_going(void);
 void reset_uart_resend_delivery_chunks_counter(void);
 void calc_uart_data_to_deliver_to_other_side(void);
 void send_uart_data_to_deliver_to_other_side(void);
+void send_buff_to_app_uart_aes_only(uint8_t* buffer, uint32_t size);
 #endif /* _UART_H_ */
