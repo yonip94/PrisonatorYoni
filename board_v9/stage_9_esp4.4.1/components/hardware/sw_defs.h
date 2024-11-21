@@ -39,7 +39,7 @@
 //11 - testing hardcoded numbers on main program                           v
 //12 - perform hmac with sha256 func with unique id & data key on blk2     v
 //13 - generate (32bytes) random numbers                                   v
-//#define AES_DEBUG 2
+//#define AES_DEBUG 13
 
 #ifdef AES_DEBUG
     //choose number of 32 bytes rng generates on test 13
@@ -311,22 +311,24 @@ typedef enum{
     TASK_PRIORITY_6 = 6
 } task_priority_t;
 
-#define UART_SEND_TASK_PRIORITY                 (TASK_PRIORITY_6)
-#define UART_GET_TASK_PRIORITY                  (TASK_PRIORITY_3)
-#define PAKCET_LOSS_TASK_PRIORITY               (TASK_PRIORITY_5) 
 #define MANAGER_TASK_PRIORITY                   (TASK_PRIORITY_6)
+#define UART_SEND_TASK_PRIORITY                 (TASK_PRIORITY_6)
+#define PAKCET_LOSS_TASK_PRIORITY               (TASK_PRIORITY_5) 
+#define UART_GET_TASK_PRIORITY                  (TASK_PRIORITY_3)
 #define MS5611_TASK_PRIORITY                    (TASK_PRIORITY_3)  
-#define CAL_TASK_PRIORITY                       (TASK_PRIORITY_1) 
-#define POWER_KEY_TASK_PRIORITY                 (TASK_PRIORITY_1) 
-#define BATTERY_TASK_PRIORITY                   (TASK_PRIORITY_1) 
-#define FAULTS_TASK_PRIORITY                    (TASK_PRIORITY_1) 
-#define ACTIVATE_LED_TASK_PRIORITY              (TASK_PRIORITY_1) 
-#define ACTIVATE_LED_PULSE_TASK_PRIORITY        (TASK_PRIORITY_1) 
+#define CAL_TASK_PRIORITY                       (TASK_PRIORITY_2)  
+#define POWER_KEY_TASK_PRIORITY                 (TASK_PRIORITY_2) 
+#define BATTERY_TASK_PRIORITY                   (TASK_PRIORITY_2) 
+#define FAULTS_TASK_PRIORITY                    (TASK_PRIORITY_2) 
+#define ACTIVATE_LED_TASK_PRIORITY              (TASK_PRIORITY_2) 
+#define ACTIVATE_LED_PULSE_TASK_PRIORITY        (TASK_PRIORITY_2) 
+#define CR_TASK_PRIORITY                        (TASK_PRIORITY_1)
 
 /* task timing */
 #define PACKET_LOSS_TASK_PERIOD_MS              (1 / portTICK_PERIOD_MS)             //1 msec
 #define MANAGER_TASK_PERIOD_MS                  (1 / portTICK_PERIOD_MS)             //1 msec
 #define CALIBRATION_CHECK_TASK_PERIOD_MS        (((1 * 1000) / portTICK_PERIOD_MS))  //1 sec
+#define CR_PERFORM_TASK_PERIOD_MS               (((1 * 1000) / portTICK_PERIOD_MS))  //1 sec
 #define MS5611_WAIT_FOR_VALID_PERIOD_MS         (10 / portTICK_PERIOD_MS)            //10 msec
 #define MS5611_TASK_PERIOD_MS                   (20 / portTICK_PERIOD_MS)            //20 msec
 #define POWER_KEY_TASK_PERIOD_MS                (((1 * 100) / portTICK_PERIOD_MS))   //100 msec

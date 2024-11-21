@@ -19,6 +19,16 @@ Each version should pass the following tests before it can be released:
 5. During long navigation (10 minutes) there are no packet losses and no resend requests
 
 ===================================================================================================
+version 0.9.28  (stage_9_esp4.4.1):
+  - for safety, perform AES CR after detect new connection and disconnection mode exits.
+  * now the process is parallel to sensors sample, and during the sampling - packets will not be
+    delivered to user untill process succeed.
+    when process fail - reset will be triggered.
+  - disable erase device calibration function and command -
+    no need it anymore since factory calib and server is not support it anyway.
+===================================================================================================
+
+===================================================================================================
 version 0.9.27  (stage_9_esp4.4.1):
   - give indication that the board is fully charged, by white light instead of red when on charging
     state.

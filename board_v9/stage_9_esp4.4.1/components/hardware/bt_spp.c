@@ -1085,11 +1085,11 @@ static void esp_spp_cb_L(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
                     }
 
                 	//erase calibration data command
-                    case(0x07):
-                    {
-                        erase_calibration_data(VIA_BT);
-                        break;
-                    }
+                    //case(0x07):
+                    //{
+                    //    erase_calibration_data(VIA_BT);
+                    //    break;
+                    //}
 
                     case(0x08):
                     {
@@ -1191,6 +1191,11 @@ static void esp_spp_cb_L(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
             else if ((bt_read_buff[PACKET_OFFSET_TYPE]==AES_APP_ID_TYPE) &&
                     (bt_read_size == AES_SEED_TOTAL_SIZE)  ) 
             {
+                //ets_printf("GOTTEN DATA = \r\n");
+                //for (uint32_t x=0; x<bt_read_size;x++)
+                //{
+                //    ets_printf("0x%02X,",bt_read_buff[x]);
+                //}
                 set_app_id_before_calibration(bt_read_buff);
             }
 

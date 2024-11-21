@@ -127,6 +127,7 @@ static uint8_t cal_data_old[PACKET_CALIBRATION_TOTAL_SIZE] = {0};
 static uint8_t cal_data_new[PACKET_CALIBRATION_TOTAL_SIZE] = {0};
 static const esp_app_desc_t* app_desc;
 static TaskHandle_t task_handle;
+static TaskHandle_t cr_task_handle;
 static bool calibration_complete_f = false;
 static bool is_cal_data_accumulate_done = false;    /* accumulating calibration data flag */
 static bool way_to_send=VIA_UART;
@@ -155,6 +156,9 @@ static bool is_rand1_ack_nack_res_arrived = false;
 
 static uint8_t rand2_encrypted_number[AES_APP_RAND_NUM_SIZE] = {0};
 static bool is_rand2_encrypted_was_send = false;
+
+static uint8_t cr_aes_status = CR_AES_SHOULD_NOT_BE_PERFORMED;
+static bool is_req_to_reset_cr_operation_arrived = false;
 
 #ifdef SAVE_SPECIFIC_CAL_DATA_DEBUG
     static uint8_t temp_calib[PACKET_CALIBRATION_TOTAL_SIZE] =
@@ -676,8 +680,9 @@ static bool is_rand2_encrypted_was_send = false;
 /*******************************************************************/
 static esp_err_t send_calibration_data_L(bool way_to_send);
 static void calibration_check_task_L(void *arg);
+static void CR_peform_task_L(void *arg);
 static esp_err_t save_calibration_data_in_NVS_L(void);
-static void perform_aes_operations(bool communication_detection);
+static void perform_aes_operations(uint8_t communication_detection);
 
 /*******************************************************************/
 /*******************************************************************/
@@ -948,7 +953,7 @@ esp_err_t calibration_after_powerup(void)
     if(manager_send_packet_sn() == 0)
     {
         manager_set_initial_comm(way_to_send);
-        perform_aes_operations(way_to_send);
+        perform_aes_operations(manager_send_last_comm());
     }
 
     /***************************************************************/
@@ -1098,6 +1103,71 @@ esp_err_t calibration_check_task_start(void)
     }
 
     return ESP_OK;
+}
+
+/****************************************************************//**
+ * @brief   Start task of AES CS operations
+ * 
+ * @param   none
+ * @return  ESP_OK on success or ESP_ERR_[ERROR] otherwise
+ *******************************************************************/
+esp_err_t AES_CR_task_start(void)
+{
+    /***************************************************************/
+    // create task
+    /***************************************************************/
+    if (pdPASS != xTaskCreatePinnedToCore(
+             CR_peform_task_L,              /* Task function */
+             "CR_perform_task",             /* name of task */
+             (TASK_STACK_DEPTH/2),          /* Stack size of task */ 
+             NULL,                          /* parameter of the task */
+             CR_TASK_PRIORITY,              /* priority of the task */ 
+             &cr_task_handle,               /* Task handle to keep track of created task */ 
+             OTHER_CORE))                   /* pin task to core 0 */ 
+    {
+        ESP_LOGE(TAG_CAL, "ERROR: CREATE CR PERFORM TASK FALIED");
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+/****************************************************************//**
+ * @brief   this function responsible to deliver request to init state
+ *          of cr aes status
+ * @param   none
+ * @return  none
+ *******************************************************************/
+void req_to_reset_cr_aes_operations_flag(void)
+{
+    is_req_to_reset_cr_operation_arrived = true;
+}
+
+/****************************************************************//**
+ * @brief   this function will change cr aes status to should be performed
+ * 			only when on init state CR_AES_SHOULD_NOT_BE_PERFORMED
+ * @param   none
+ * @return  none
+ *******************************************************************/
+void set_cr_aes_operations_flag(void)
+{
+	//if the operation was not started yet
+	if (cr_aes_status == CR_AES_SHOULD_NOT_BE_PERFORMED)
+	{
+		//start the operation
+		cr_aes_status = CR_AES_SHOULD_BE_PERFORMED;
+	}
+}
+
+/****************************************************************//**
+ * @brief   this function shows current challenge response status flag
+ * 
+ * @param   none
+ * @return  cr aes current status
+ *******************************************************************/
+uint8_t get_cr_aes_operations_flag(void)
+{
+	return(cr_aes_status);
 }
 
 /****************************************************************//**
@@ -1411,6 +1481,7 @@ uint8_t calibration_send_interrupt_flag(void)
  * @param   [IN] way_to_send    - true - via bt / false - via uart
  * @return  ESP_OK on success or ESP_ERR_[ERROR] otherwise
  *******************************************************************/
+/*
 void erase_calibration_data(bool way_to_send)
 {
     //preparing the buffer to be written on nvs
@@ -1431,6 +1502,7 @@ void erase_calibration_data(bool way_to_send)
     }
     is_cal_data_accumulate_done=true;
 }
+*/
 
 /****************************************************************//**
  * @brief   sending out if any calibration data saved on the device
@@ -1594,7 +1666,7 @@ static esp_err_t send_calibration_data_L(bool way_to_send)
  * @brief   Calibration check task
  * @details Read BT data. If new calibration data received then save it to NVS.
  * @param   none
- * @return  ESP_OK on success or ESP_ERR_[ERROR] otherwise
+ * @return  none
  *******************************************************************/
 static void calibration_check_task_L(void *arg)
 {
@@ -1887,11 +1959,80 @@ static esp_err_t save_calibration_data_in_NVS_L(void)
     return ESP_OK;   
 }
 
-static void perform_aes_operations(bool communication_detection)
+/****************************************************************//**
+ * @brief   AES CR task function
+ * @details checking status of disconnection mode and connection mode, perform aes operation in accordance
+ * @param   none
+ * @return  none
+ *******************************************************************/
+static void CR_peform_task_L(void *arg)
+{
+    for (;;)
+    {
+        if (get_board_stop_any_operation()==true)
+        {
+            vTaskDelete(cr_task_handle);
+        }
+        
+        if (cr_aes_status == CR_AES_SHOULD_BE_PERFORMED)
+        {
+            //set_pairing_actions_ongoing_flag(); //this is uneeded  - but if so - check how to perform the usage of the function to see pairing light 
+            
+			cr_aes_status = CR_AES_ONGOING;
+            perform_aes_operations(manager_send_last_comm());
+			cr_aes_status = CR_AES_DONE;
+
+            //reset_pairing_actions_ongoing_flag(); //this is uneeded  - but if so - check how to perform the usage of the function to see pairing light 
+            
+            //if (manager_send_last_comm() == BT_COMMUNICATION_DETECTED)
+            //{
+            //    ets_printf("cr aes operation succeed\r\n");
+            //}
+        }
+
+        else
+        {
+            if (is_req_to_reset_cr_operation_arrived == true)
+            {
+                if ((cr_aes_status == CR_AES_DONE)                   ||
+                    (cr_aes_status == CR_AES_SHOULD_NOT_BE_PERFORMED)  )
+                {
+                    is_req_to_reset_cr_operation_arrived = false;
+                    cr_aes_status = CR_AES_SHOULD_NOT_BE_PERFORMED;
+                    is_app_id_was_sent = false;
+                }
+                else
+                {
+                    if (manager_send_last_comm() == BT_COMMUNICATION_DETECTED)
+                    {
+                        ets_printf("cr aes task - how im here? %u\r\n",cr_aes_status);
+                    }
+                }
+            }
+        }
+
+        /***********************************************************/
+        // task go to sleep
+        /***********************************************************/
+        vTaskDelay(CR_PERFORM_TASK_PERIOD_MS);
+    }
+}
+
+/****************************************************************//**
+ * @brief   AES CR function
+ * @details challenge response process between board to app
+ * 			in case of any fail - board will reset itself
+ *			time to wait for the 1st app message (type16) = AES_BEGIN_TIMEOUT_US
+ *			time to let the aes operation complete 
+ *          since the 1st message arrival = CHALLENGE_RESPONSE_TIMEOUT_US_BT or CHALLENGE_RESPONSE_TIMEOUT_US_UART
+ * @param   [IN] communication_detection - the communication of performing the aes operation
+ * @return  none
+ *******************************************************************/
+static void perform_aes_operations(uint8_t communication_detection)
 {
     uint64_t challenge_response_timeout = 0;
     uint64_t aes_operation_start_time = 0;
-    if (communication_detection == VIA_BT)
+    if (communication_detection == BT_COMMUNICATION_DETECTED)
     {
         #ifndef AES_USAGE_BT
             return;
@@ -1918,8 +2059,7 @@ static void perform_aes_operations(bool communication_detection)
 
     //stage 1 - get the id from App
     memset(app_id_aes, 0x00, sizeof(app_id_aes));
-    is_app_id_was_sent = false;
-    while (esp_timer_get_time()-aes_operation_timeout<=AES_BEGIN_TIMEOUT_US)
+    while ((esp_timer_get_time()-aes_operation_timeout)<=AES_BEGIN_TIMEOUT_US)
     {
         if (is_app_id_was_sent == true)
         {
@@ -1930,6 +2070,7 @@ static void perform_aes_operations(bool communication_detection)
 
         vTaskDelay(10);
     }
+
     //ets_printf("timestamp = %llu\r\n",esp_timer_get_time()-aes_operation_timeout);
 
     //stage 1 - process data 
@@ -1999,7 +2140,7 @@ static void perform_aes_operations(bool communication_detection)
             ESP_LOGI(TAG_CAL, "BOARD SENDS ACK TO APP ID AND BLK NUMBER = ");
         #endif
 
-        if (communication_detection == VIA_BT)
+        if (communication_detection == BT_COMMUNICATION_DETECTED)
         {
             bt_send_data(ack_nack_buffer_to_send,AES_ACK_NACK_TOTAL_SIZE);
         }
@@ -2017,7 +2158,7 @@ static void perform_aes_operations(bool communication_detection)
             ESP_LOGE(TAG_CAL, "BOARD SENDS NACK TO APP ID AND BLK NUMBER = ");
         #endif
 
-        if (communication_detection == VIA_BT)
+        if (communication_detection == BT_COMMUNICATION_DETECTED)
         {
             bt_send_data(ack_nack_buffer_to_send,AES_ACK_NACK_TOTAL_SIZE);
         }
@@ -2033,7 +2174,7 @@ static void perform_aes_operations(bool communication_detection)
     //stage 2 - get the rand1 num from App
     is_stage_pass = false;
     is_rand1_was_sent = false;
-    while (esp_timer_get_time()-aes_operation_start_time<=challenge_response_timeout)
+    while ((esp_timer_get_time()-aes_operation_start_time)<=challenge_response_timeout)
     {
         if (is_rand1_was_sent == true)
         {
@@ -2083,7 +2224,7 @@ static void perform_aes_operations(bool communication_detection)
                 ESP_LOGI(TAG_CAL, "BOARD SENDS ENCRYPTED RAND1 CBC TO APP = ");
             #endif
 
-            if (communication_detection == VIA_BT)
+            if (communication_detection == BT_COMMUNICATION_DETECTED)
             {
                 bt_send_data(encrypted_data_res,sizeof(encrypted_data_res));
             }
@@ -2102,7 +2243,7 @@ static void perform_aes_operations(bool communication_detection)
             ESP_LOGE(TAG_CAL, "BOARD SENDS NACK TO APP BECAUSE RANDOM1 NUMBER WAS NOT ARRIVED");
         #endif
 
-        if (communication_detection == VIA_BT)
+        if (communication_detection == BT_COMMUNICATION_DETECTED)
         {
             bt_send_data(encrypted_data_res,sizeof(encrypted_data_res));
         }
@@ -2117,7 +2258,7 @@ static void perform_aes_operations(bool communication_detection)
     //stage 3 - wait for ack or nack from app about rand1 encrypted
     rand1_ack_nack_res = AES_NACK;
     is_rand1_ack_nack_res_arrived = false;
-    while (esp_timer_get_time()-aes_operation_start_time<=challenge_response_timeout)
+    while ((esp_timer_get_time()-aes_operation_start_time)<=challenge_response_timeout)
     {
         if (is_rand1_ack_nack_res_arrived == true)
         {
@@ -2152,7 +2293,7 @@ static void perform_aes_operations(bool communication_detection)
             #endif
         }
 
-        if (communication_detection == VIA_BT)
+        if (communication_detection == BT_COMMUNICATION_DETECTED)
         {
             bt_send_data(rand2_buffer_to_send,sizeof(rand2_buffer_to_send));
         }
@@ -2167,8 +2308,6 @@ static void perform_aes_operations(bool communication_detection)
     //stage 3 - if ACK was gotten send to the app rand2 number
     else
     {
-        
-
         #ifdef ALLOW_AES_PRINTS
             ESP_LOGI(TAG_CAL, "APP AGREE WITH BOARD RAND1 DECRYPTION, BOARD SENDS GENERATES AND SEND RAND2 TO APP");
         #endif
@@ -2224,7 +2363,7 @@ static void perform_aes_operations(bool communication_detection)
             ESP_LOGI(TAG_CAL, "BOARD SENDS TO APP RAND2 HEX NUMBER + HEADER = ");
         #endif
 
-        if (communication_detection == VIA_BT)
+        if (communication_detection == BT_COMMUNICATION_DETECTED)
         {
             bt_send_data(rand2_buffer_to_send,sizeof(rand2_buffer_to_send));
         }
@@ -2236,7 +2375,7 @@ static void perform_aes_operations(bool communication_detection)
     
     //stage 4 - wait for encrypted rand2 number from app
     is_rand2_encrypted_was_send = false;
-    while (esp_timer_get_time()-aes_operation_start_time<=challenge_response_timeout)
+    while ((esp_timer_get_time()-aes_operation_start_time)<=challenge_response_timeout)
     {
         if (is_rand2_encrypted_was_send == true)
         {
@@ -2259,7 +2398,7 @@ static void perform_aes_operations(bool communication_detection)
             ESP_LOGE(TAG_CAL, "BOARD SENDS NACK TO APP BECAUSE ENCRYPTED RANDOM2 NUMBER WAS NOT ARRIVED");
         #endif
 
-        if (communication_detection == VIA_BT)
+        if (communication_detection == BT_COMMUNICATION_DETECTED)
         {
             bt_send_data(ack_nack_buffer_to_send,AES_ACK_NACK_TOTAL_SIZE);
         }
@@ -2346,7 +2485,7 @@ static void perform_aes_operations(bool communication_detection)
         }
     #endif
 
-    if (communication_detection == VIA_BT)
+    if (communication_detection == BT_COMMUNICATION_DETECTED)
     {
         bt_send_data(ack_nack_buffer_to_send,AES_ACK_NACK_TOTAL_SIZE);
     }

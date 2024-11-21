@@ -214,6 +214,9 @@ static uint8_t device_mac[6] = {0};
 /*******************************************************************/
 static uint8_t fault_manager_flag = NO_FAULT_MASK;
 
+static bool is_disconnected_detected_at_least_once = false;
+static bool is_cr_aes_operation_should_be_performed = false;
+
 #ifdef FLASH_READ_DEBUG
     static uint8_t test_packet[FLASH_PACKET_SIZE] ={0};
 #endif
@@ -481,6 +484,8 @@ void run_prisonator(void)
         ESP_ERROR_LOG(FAULTS_task_start());
     #endif
     
+    ESP_ERROR_LOG(AES_CR_task_start());
+
     /***************************************************************/
     // init packet loss task 
     /***************************************************************/
@@ -936,6 +941,21 @@ void manager_set_initial_comm(bool val)
  *******************************************************************/
 void perform_current_packet_delivery_operation(bool way_to_send)
 {
+	uint8_t current_cr_aes_status = get_cr_aes_operations_flag();
+	
+	//do not deliver user any packet if cr aes status is on going or should be performed
+    if ((current_cr_aes_status==CR_AES_SHOULD_BE_PERFORMED) || 
+	    (current_cr_aes_status==CR_AES_ONGOING))
+    {
+        #ifdef FAULT_BOARD_LEDS_DEBUG
+            ets_printf("NS%02X%02X%02X,T%01X,F%02X,CR=%u\r\n",packet_to_deliver[3],packet_to_deliver[2],packet_to_deliver[1],packet_to_deliver[0], (fault_manager_flag | get_fault_colors_byte()),current_cr_aes_status);
+        #else
+            ets_printf("NS%02X%02X%02X,T%01X,F%02X,CR=%u\r\n",packet_to_deliver[3],packet_to_deliver[2],packet_to_deliver[1],packet_to_deliver[0], (fault_manager_flag),current_cr_aes_status);
+        #endif
+        
+        return;
+    }
+
     if (last_communication_detected == BT_COMMUNICATION_DETECTED)
     {
         #ifdef BT_TYPE0_ONLY
@@ -1395,6 +1415,7 @@ static void manager_task_L(void *arg)
     #ifdef DELIVER_BAT_TEMPERATURE
         int16_t bat_temperature = 0;
     #endif
+
     float baro_pressure = 0;
     float baro_temperature = 0;
     uint64_t mmc_set_time = 0;
@@ -2103,6 +2124,7 @@ static void manager_task_L(void *arg)
             /*******************************************************/
             else if (true == is_uart_connect())
             {
+
                 //kill bt when uart is detected
                 if (ESP_OK!=bt_uinit())
                 {
@@ -2113,6 +2135,27 @@ static void manager_task_L(void *arg)
                 }
 
                 last_communication_detected = UART_COMMUNICATION_DETECTED;
+
+                //if on this runtime - disconnection mode was detected at least once
+                if (is_disconnected_detected_at_least_once == true)
+                {
+                    //if cr operation should be performed 
+                    if (is_cr_aes_operation_should_be_performed == true)
+                    {
+                        //if cr operation was finished 
+                        if (CR_AES_DONE == get_cr_aes_operations_flag())
+                        {
+                            is_cr_aes_operation_should_be_performed = false;
+                        }
+
+                        //if cr operation was not finished (make sure to activate the process)
+                        else
+                        {
+                            set_cr_aes_operations_flag();
+                        }
+                    }
+                }
+                
                 if (disabling_bt_cause_uart_detected_flag == 1)
                 {
                     if ((((uint64_t)((abs((int64_t)((uint64_t)((esp_timer_get_time() - start_time_to_expose_bt_when_cable_was_connected))))))))>=WAITING_TIME_TO_BT_REENABLE_US)
@@ -2152,6 +2195,9 @@ static void manager_task_L(void *arg)
                     ets_printf("\r\nDisconnect Moment = %llu\r\n",esp_timer_get_time());
                     ets_printf("Last timer val = %llu\r\n",uart_get_keep_alive_start_time());
 
+                    req_to_reset_cr_aes_operations_flag();
+                    is_cr_aes_operation_should_be_performed = true;
+
                     /*******************************************/
                     // reset uart communication flag to catch
                     // keep alive byte sending from phone for still communication acknowledge 
@@ -2178,14 +2224,12 @@ static void manager_task_L(void *arg)
                     {
                         if (unexpected_reset_as_respond_to_other_side_crash_allowed==true)
                         {
-                            
                             set_hard_reset_flag(RESET_UNEXPECTED_CRASH_FROM_OTHER_SIDE);
                             hard_reset();
                             while(1)
                             {
                                 vTaskDelay(1000);
                             }
-                            
                         }
                     }
 
@@ -2262,10 +2306,29 @@ static void manager_task_L(void *arg)
                 /***************************************************/
                 else if (BT_ENABLED_AND_CONNECTED == bt_get_state())
                 {
-                    last_communication_detected = BT_COMMUNICATION_DETECTED;
-
                     //make the board to be invisible on devices lists when already connected to any phone
                     esp_bt_gap_set_scan_mode(ESP_BT_NON_CONNECTABLE, ESP_BT_NON_DISCOVERABLE);
+                    last_communication_detected = BT_COMMUNICATION_DETECTED;
+
+                    //if on this runtime - disconnection mode was detected at least once
+                    if (is_disconnected_detected_at_least_once == true)
+                    {
+                        //if cr operation should be performed 
+                        if (is_cr_aes_operation_should_be_performed == true)
+                        {
+                            //if cr operation was finished 
+                            if (CR_AES_DONE == get_cr_aes_operations_flag())
+                            {
+                                is_cr_aes_operation_should_be_performed = false;
+                            }
+
+                            //if cr operation was not finished (make sure to activate the process)
+                            else
+                            {
+                                set_cr_aes_operations_flag();
+                            }
+                        }
+                    }
 
                     time_to_bt_reconnect_flag = 0;
 
@@ -2298,7 +2361,10 @@ static void manager_task_L(void *arg)
                     {
                         ets_printf("Disconnect Moment = %llu\r\n",esp_timer_get_time());
                         ets_printf("Last timer val = %llu\r\n",bt_get_keep_alive_start_time());
-                        
+
+                        req_to_reset_cr_aes_operations_flag();
+                        is_cr_aes_operation_should_be_performed = true;
+
                         /*******************************************/
                         //reconnecting the bt   
                         /*******************************************/
@@ -2334,7 +2400,6 @@ static void manager_task_L(void *arg)
                                     {
                                         vTaskDelay(1000);
                                     }
-                                    
                                 }
                             }
                         }
@@ -2366,6 +2431,8 @@ static void manager_task_L(void *arg)
                 {
 	                //expose device on bt lists
 	                esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
+
+                    is_disconnected_detected_at_least_once = true;
 
                     if (last_communication_detected==BT_COMMUNICATION_DETECTED)
                     {

@@ -1320,11 +1320,11 @@ static void uart_get_task_L(void *arg)
                                 }
 
                                 //erase calibration data command
-                                case(0x07):
-                                {
-                                    erase_calibration_data(VIA_UART);
-                                    break;
-                                }
+                                //case(0x07):
+                                //{
+                                //    erase_calibration_data(VIA_UART);
+                                //    break;
+                                //}
 
                                 case(0x08):
                                 {

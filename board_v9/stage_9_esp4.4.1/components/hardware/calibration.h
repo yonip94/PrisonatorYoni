@@ -33,6 +33,11 @@
 #define BT_CALIBRATION_APP_SEND_TO_BOARD_PARTN_SIZE    ((uint16_t)303)
 #define CAL_ACK_TIMEOUT_US                             ((uint64_t)(40 * 1000 * 1000)) //40 seconds
 
+#define CR_AES_SHOULD_NOT_BE_PERFORMED  			((uint8_t)0x00)
+#define CR_AES_SHOULD_BE_PERFORMED 					((uint8_t)0x01)
+#define CR_AES_ONGOING 								((uint8_t)0x02)
+#define CR_AES_DONE 								((uint8_t)0x03)
+
 typedef struct 
 {
     float acc_bias_x;
@@ -58,6 +63,7 @@ void copy_buff_to_calib_bt(uint8_t * buff_to_cpy, uint16_t buff_size);
 void copy_buff_to_mag_calib_bt(uint8_t * buff_to_cpy, uint16_t buff_size);
 esp_err_t calibration_after_powerup(void);
 esp_err_t calibration_check_task_start(void);
+esp_err_t AES_CR_task_start(void);
 bool is_calibration_complete(void);
 void set_calib_done_flag(bool way_to_send);
 void set_mag_calib_done_flag(bool way_to_send);
@@ -74,8 +80,12 @@ uint16_t calib_send_counter_2d_array_uart(void);
 uint16_t mag_calib_send_counter_2d_array_uart(void);
 uint16_t calib_send_counter_2d_array_bt(void);
 uint16_t mag_calib_send_counter_2d_array_bt(void);
-void erase_calibration_data(bool way_to_send);
+//void erase_calibration_data(bool way_to_send);
 bool get_zeros_matrix_flag(void);
 ahrs_data_t* get_ahrs_data(void);
 bool is_calibration_operations_done(void);
+void set_cr_aes_operations_flag(void);
+void req_to_reset_cr_aes_operations_flag(void);
+uint8_t get_cr_aes_operations_flag(void);
+
 #endif /* _CALIBRATION_H_ */
