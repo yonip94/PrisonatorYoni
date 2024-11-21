@@ -1,0 +1,99 @@
+version-control:
+
+Each version should pass the following tests before it can be released:
+1. Device can be paired.
+2. MAG calibration in a non-magnetic environment gives a norm of 0.45  
+3. A navigation can start.
+4. During navigation start a record in STATIC state for 2 minutes and check:
+4.1 On imuRaw_xxx_yyy.csv:
+       - The time-stamps difference should be 5ms +/- 5usec.
+4.2 On magRaw_xxx_yyy.csv:
+       - The time-stamps difference should be 20ms +/- 5usec.
+4.3 On record_xxx_yyy.csv:
+       - The time-stamps difference should be 5ms +/- 5usec.
+       - The GYRO (all sensors on all axes) should be with STDDEV of less then 0.08
+       - The ACC  (all sensors on all axes) should be with STDDEV of less then 0.0015
+       - The MAG  (all axes) should be with STDDEV of less then 0.001
+       - The GYRO (all sensors on all axes) should be with spikes of less then abs(2)
+       - The ACC  (all sensors on all axes) should be with spikes of less then abs(1.2)
+5. During long navigation (10 minutes) there are no packet losses and no resend requests
+
+
+version 0.8.25  (stage_8_esp4.4.1):
+===================================================================================================
+   - fixing board decision to enter disconnect even when KA was sent.
+   - even if fail with imu data - going to the next set.
+===================================================================================================
+version 0.8.24  (stage_8_esp4.4.1):
+  contains:
+    - still liran favour exist - change packets resends from type0 to 10 till type11 instead of catching
+      communication and entering disconnection mode. (check if type0 save on this time is ok for liran)
+    - adding 2 new types, to enable or disable KA usage via the board itself.
+    - fix - overflow buffer bug on read data from external flash. (spi_xfer file)
+    - saving packets on type0 on external flash when in idle mode.
+    - when on idle mode and pressing on the power button - open BT again and wait for connection.
+      If you get a KA from the app, the board will power off itself after 4 seconds, otherwise it will power off after 1min.
+    * when not on idle mode and power button was pressed - board will reset itself like before. 
+    - if on idle mode (the board will not power itself off after 11 min)
+      but on disconnect mode or before pairing (after 11 min - board will power itself off)     
+    - fix - BT mechanisem to the right use (cong and status). 
+    - adding flag which says when ready to resend new packet on BT.
+    - decrease prints bytes amount on BT for debugging.
+    - increase priority of manager Task to the maximum.
+    - fix - terminal case of packet sn resetting after 0xffffff in flash management 
+    - type8 8 - reseting also code_start_flag 
+    - remove uneeded calibration packets log after type8_8.
+    - fix overflow in in_nvs_packet_mem_2 in case of type8_8.
+    - change partition table to support states of board not save calib matrix. (should test it and try find if the problem occur again)
+    - fix - cable communication sometimes will not send packets after type8_8 and KA.
+      setting the flag - short_packet_finished_to_be_sent to true when type8_8 arrive fix the issue.   
+===================================================================================================
+
+===================================================================================================
+version 0.8.23  (stage_8_esp4.4.1):
+  contains:
+    - fix resend on uart cable - tested a bit with debug - seems good 
+    - type8,8 in better way - implementation
+    - fix flash management bugs
+    - make liran favour - change packets resends from type0 to 10 till type11 instead of catching
+      communication and entering disconnection mode
+===================================================================================================
+
+===================================================================================================
+version 0.8.22  (stage_8_esp4.4.1):
+  contains:
+    - change flash management vision
+===================================================================================================
+
+===================================================================================================
+version 0.8.21  (stage_8_esp4.4.1):
+  contains:
+    - pulse sync added before packet delivery only in connection mode (normal packet delivery).
+    - AHRS - 9 new parameters were added to the ahrs, complete - should test.
+
+known issues:
+ - timer - counter time should be 500us but instead of it 480us gives the desired pulse
+===================================================================================================
+
+===================================================================================================
+version 0.8.20  (stage_8_esp4.4.1):
+  contains:
+    - automatic shutdown when device is not connected for at least 11 min.
+
+    - colors mangement in this way: 
+      - yellow - board power up (only in this color - if board doesnt contain calibration matrix - 
+        the led will blink 3 times every 1 second)
+      - blue blink fast - during pairing and before acknowledge from app
+      - blue - connected
+      - green - navigating
+      - if battery precents is lower than 30% - in each state as shown above - it will blink 6 time slowly
+      - red - in case of board fault (after 5 seconds red will appear for 1 second). 
+
+    - memory management - when board has connection - data will be saved on memory as normal packet
+                        - when board has not connected to phone - data will be saved as short packet
+                        - user will get resend packet according whats on the memory and not according to the ask.
+===================================================================================================
+
+
+
+

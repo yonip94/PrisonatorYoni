@@ -1,0 +1,200 @@
+version-control:
+
+Each version should pass the following tests before it can be released:
+1. Device can be paired.
+2. MAG calibration in a non-magnetic environment gives a norm of 0.45  
+3. A navigation can start.
+4. During navigation start a record in STATIC state for 2 minutes and check:
+4.1 On imuRaw_xxx_yyy.csv:
+       - The time-stamps difference should be 5ms +/- 5usec.
+4.2 On magRaw_xxx_yyy.csv:
+       - The time-stamps difference should be 20ms +/- 5usec.
+4.3 On record_xxx_yyy.csv:
+       - The time-stamps difference should be 5ms +/- 5usec.
+       - The GYRO (all sensors on all axes) should be with STDDEV of less then 0.08
+       - The ACC  (all sensors on all axes) should be with STDDEV of less then 0.0015
+       - The MAG  (all axes) should be with STDDEV of less then 0.001
+       - The GYRO (all sensors on all axes) should be with spikes of less then abs(2)
+       - The ACC  (all sensors on all axes) should be with spikes of less then abs(1.2)
+5. During long navigation (10 minutes) there are no packet losses and no resend requests
+
+
+Known Issues:
+Need to check this error: BT_BTC: btc_spp_arg_deep_copy 6 osi_malloc failed
+
+===================================================================================================
+version 0.7.12  (stage_7_esp4.4.1):
+  - implementing data transfer through UART
+  - implementing keep-alive mechanism (not in used yet).
+  - implementing disconnection mode (sending shorter packets). (not in used yet)
+
+known issues:
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+ - the MMC data is sometimes not ready.
+ - there is a bug with the UART sending - it takes too long with 460800 and the 5msec timing is not good.
+
+===================================================================================================
+version 0.7.11  (stage_7_esp4.4.1):
+  - setting a custom partition.
+  - setting FOR_RAN=0 (enabling calibration + baudrate is 3000000).
+  - pinning each task to a specific core.
+  - keep NVS storage open all the time (never using nvs_close() function).
+  - in i2c_master_cmd_begin() changing timeout from 1000 to 2 ticks.
+  - sdkconfig: changing FLASHSIZE from 4M to 8M 
+
+known issues:
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+ - the MMC data is sometimes not ready.
+ - there is a bug with the UART sending - it takes too long with 460800 and the 5msec timing is not good.
+
+===================================================================================================
+version 0.7.10  (stage_7_esp4.4.1):
+  - changing ahrs_data_in.imu_rate to 50
+  - setting FOR_RAN=1 (skipping calibration + baudrate is 460800)
+  - THIS IS THE DRONE FIRST VERSION
+
+known issues:
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+ - the MMC data is sometimes not ready.
+ - there is a bug with the UART sending - it takes too long with 460800 and the 5msec timing is not good.
+
+===================================================================================================
+version 0.7.9  (stage_7_esp4.4.1):
+  - enabling IDLE mode (it was disabled in 0.7.8)
+
+known issues:
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+ - the MMC data is sometimes not ready.
+ - there is a bug with the UART sending - it takes too long with 460800 and the 5msec timing is not good.
+
+===================================================================================================
+version 0.7.8  (stage_7_esp4.4.1):
+  - just increase version number to be fix with HW / Application.
+
+known issues:
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+ - the MMC data is sometimes not ready.
+ - there is a bug with the UART sending - it takes too long with 460800 and the 5msec timing is not good.
+
+===================================================================================================
+version 0.7.7  (stage_7_esp4.4.1):
+  - feeding AHRS with 2 samples
+  - packet size increased to 850 (more bytes for AHRS to be send)
+
+known issues:
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+ - the MMC data is sometimes not ready.
+ - there is a bug with the UART sending - it takes too long with 460800 and the 5msec timing is not good.
+
+===================================================================================================
+version 0.7.6-dev  (stage_7_esp4.4.1):
+ - change back uart.h / uart.c to be the same as in 0.7.4 (TZABAD FIRST VERSION)
+ - adding HA_uart_dev.c/.h and HA_uart_dev_1.c/.h - use them for UART development 
+ - uart_data_tx_start = \n\rDATA\n\r + NULL (total 9 bytes)
+ - uart.flow_ctrl = UART_HW_FLOWCTRL_DISABLE
+ - adding: #define FOR_RAN:
+    FOR_RAN == 1:
+      - disable calibration_after_powerup()
+      - baudrate = 460800
+    FOR_RAN == 0:
+      - enable calibration_after_powerup()
+      - baudrate = 3000000
+
+known issues:
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+ - the MMC data is sometimes not ready.
+ - there is a bug with the UART sending - it takes too long and the 5msec timing is not good.
+
+===================================================================================================
+version 0.7.5  (stage_7_esp4.4.1):
+ - support BT Enable/Disable when Exit/Enter IDLE state.  
+ - remove calibration_after_powerup() - ONLY FOR ELBIT FIRST VERSION
+ - set PRINT_LOG=0
+ - set baudrate=400000 
+ - THIS IS THE ELBIT FIRST VERSION
+
+known issues:
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+ - the MMC data is sometimes not ready.
+ - need to check how much the BT disabling helps with the power saving.
+ - there is a bug with the UART sending - it takes too long and the 5msec timing is not good.
+
+===================================================================================================
+version 0.7.4  (stage_7):
+ - supporting packet sent through cable.
+ - THIS IS THE TZABAD FIRST VERSION
+
+known issues:
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+
+===================================================================================================
+version 0.7.3  (stage_7):
+ - fix bug "the time difference between IMU sample is no always 5msec" - now it is much better.
+
+known issues:
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+
+===================================================================================================
+version 0.7.2  (stage_7):
+ - bt_packet decreased to 802 bytes
+ - adding bt_packet[BT_PACKET_OFFET_IDLE_MODE_VAL] content.
+
+known issues:
+ - the time difference between IMU sample is almost 5msec. However sometimes there is a 
+   difference up to 6.5msec. Need to debug.
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+
+===================================================================================================
+version 0.7.1  (stage_7):
+ - integrating AHRS algorythm
+ - bt_packet increase by 48 bytes (to support AHRS output)
+
+known issues:
+ - the time difference between IMU sample is almost 5msec. However sometimes there is a 
+   difference up to 6.5msec. Need to debug.
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+
+===================================================================================================
+version 0.7.0  (stage_7):
+ - removing unnecessary code ("beautify")
+ - create arch/ folder for unused files from stage_6
+ - set GPIO_GPS_PWR_EN to '0' all the time
+
+known issues:
+ - the time difference between IMU sample is almost 5msec. However sometimes there is a 
+   difference up to 6.5msec. Need to debug.
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+
+===================================================================================================
+version 0.6.2  (stage_6):
+ - change cpu freq from 240MHz to 160MHz
+
+known issues:
+ - the time difference between IMU sample is almost 5msec. However sometimes there is a 
+   difference up to 6.5msec. Need to debug.
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+
+===================================================================================================
+version 0.6.1  (stage_6):
+ - change MMC SET/RESET and sampling timing as described in  
+ - support new BT package structure
+
+known issues:
+ - the time difference between IMU sample is almost 5msec. However sometimes there is a 
+   difference up to 6.5msec. Need to debug.
+ - the IMU gyro & acceletomer are sometimes stuck on the same values for a few msec. Need to debug.
+
+Need to implement: 
+* Need to add GPS.
+===================================================================================================
+version 0.6.0 (stage_6):
+ - support board version 6
+ - support new BT package structure
+
+known issues:
+ - the time difference between IMU sample is almost 5msec. However sometimes there is a 
+   difference up to 6.5msec. Need to check why?
+
+Need to implement:
+* Need to add GPS.
+===================================================================================================

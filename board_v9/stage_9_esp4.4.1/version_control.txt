@@ -1,0 +1,322 @@
+version-control:
+
+Each version should pass the following tests before it can be released:
+1. Device can be paired.
+2. MAG calibration in a non-magnetic environment gives a norm of 0.45  
+3. A navigation can start.
+4. During navigation start a record in STATIC state for 2 minutes and check:
+4.1 On imuRaw_xxx_yyy.csv:
+       - The time-stamps difference should be 5ms +/- 5usec.
+4.2 On magRaw_xxx_yyy.csv:
+       - The time-stamps difference should be 20ms +/- 5usec.
+4.3 On record_xxx_yyy.csv:
+       - The time-stamps difference should be 5ms +/- 5usec.
+       - The GYRO (all sensors on all axes) should be with STDDEV of less then 0.08
+       - The ACC  (all sensors on all axes) should be with STDDEV of less then 0.0015
+       - The MAG  (all axes) should be with STDDEV of less then 0.001
+       - The GYRO (all sensors on all axes) should be with spikes of less then abs(2)
+       - The ACC  (all sensors on all axes) should be with spikes of less then abs(1.2)
+5. During long navigation (10 minutes) there are no packet losses and no resend requests
+
+===================================================================================================
+version 0.9.23  (stage_9_esp4.4.1):
+  - when board button is pressed - let the app know it by send on current board transmit packets (type0 or type1)  
+    the special byte PACKET_TYPE_SHUT_DOWN on packet offset type field
+===================================================================================================
+
+===================================================================================================
+version 0.9.22  (stage_9_esp4.4.1):
+  - change to 11min instead of 40 seconds to open bt communication when board moves after idle detected
+  - send packets anyway - no matter cong state
+===================================================================================================
+
+===================================================================================================
+version 0.9.21  (stage_9_esp4.4.1):
+  - change to 40 instead of 20 seconds to open bt communication when board moves after idle detected
+  - change to 40 instead of 20 seconds to open bt communication when pairing process is ongoing
+===================================================================================================
+
+===================================================================================================
+version 0.9.20  (stage_9_esp4.4.1):
+- remove duplicate uart flag for calibration process done/ongoing.
+- remove bt read function to catch calibration, as the callback already cope with it.
+- disconnection mode allowed now from the board side only when on navigation.
+- each reset or shutdown will be documented in the nvs.
+- support new led colors & attitude for operational version:
+  1 when on idle mode, other side died, stay green infinit time. only if during the idle mode there is a movement
+    and if not get new connection after 20 sec -> reset.
+  2 when on idle mode, green light
+  3 when on idle mode, movement will reenable bt to new connection
+  4 led color will be green on disconnection mode instead of yellow as was before.
+  5.1 adding option in sw_defs.h to reset board when unexpected crash detected by the board 
+      from the other side but not in nav and not on disconnection mode.
+    	5.1.1 - while pairing more than 20 seconds - reset(changing the timeout from 10min to 20sec)
+	5.1.1 - when crash detected from the other side while connected (blue color)
+  5.2 when navigating and other side crashed - board will enter to disconnect mode.
+  5.3 11 min on disconnect mode without any pair will lead reset.
+  
+- when board with yellow light and not getting any pair for 11 min - shutting down.
+- fix bug that allows now to switch between communications in middle, and if shut down or reset
+  occurred, document it right.
+
+- adding 2 defines in the sw defs which one of them will lead fast shutdown (1min) instead of 11min
+  when led is yellow.
+  the other one will lead reset faster (1min instaed of 11min) while board not get new reconnection from 
+  disconnection mode. 
+   
+- adding new types to define board operations modes by the other side:
+  *better to define it once before the 1st keep alive.
+  the states will remain untill changing them again by the other side. 
+  and the states are:
+  8,0e - allows entering disconnection mode (default)
+  8,1e - not allowed to enter disconnection mode, instead will be performed reset.
+  8,2e - allows the board to reset itself when unexpected crashes of the other side are detected (default)
+  
+  board modes:
+  1 operational:
+	  8,2e - default u
+	  8,0e - default t
+  
+  2 any other side crash will lead board reset (reset instead of disconnection mode)
+	  8,1e           y
+	  8,2e - default u
+  
+  3 board never turnned off by unexpected crash
+	  8,b - ignore ka (also perform the not of 8,2e) e
+
+	  *
+	  8,0c - will stop to ignore the ka and allow back the reset behaviour for detection other side unexpected crash r
+    8,c behaves also like a KA arrived
+
+===================================================================================================
+
+===================================================================================================
+version 0.9.19  (stage_9_esp4.4.1):
+- removing unused variables
+- changing the partition table to add causes of resets and power off:
+  (saving the history of the 16 last resets)
+  (saving the history of the 16 last power off)
+===================================================================================================
+
+===================================================================================================
+version 0.9.18  (stage_9_esp4.4.1):
+- using again the ka mechanisem.
+- using the bt callback catching who stops the connection.
+- remove the copy of mag1 to mag2, and insert instead pressure sensor data.
+* important!!!  on the other side if not duplicate mag1 and mag2 the navigate will be destroyed!!
+- adding pressure sensor
+      the data sampled 5 times on type0 packet and stores on the locations: 
+      sample 1 -> magnetometer2 set 1 (2 bytes) (TS = same as magnetometer 1 sets 1 TS)
+            sample 2 -> magnetometer2 set 2 (2 bytes) (TS = same as magnetometer 1 sets 2 TS)
+      sample 3 -> magnetometer2 set 3 (2 bytes) (TS = same as magnetometer 1 sets 3 TS)
+      sample 4 -> magnetometer2 set 4 (2 bytes) (TS = same as magnetometer 1 sets 4 TS)
+      sample 5 -> additional data body temperature value (2 bytes) (TS = same as barometer pressure&temperature - each 40ms)
+      
+      the data sampled 1 time on type10 packet and store on the location: 
+      sample 1 -> additional data body temperature value (2 bytes) (TS = same as barometer pressure&temperature - each 40ms)
+      to get the data: (LSB first, MSB last)
+      example:
+      [0]=0x12 [1]=0x04
+      data = 0x0412[mV] => 1042[mV]
+- adding bat voltage, current and remain capacity on magnetometer2 set 1 after the pressure sensor value (current - int16, voltage + capacity uint16_t)
+      those are the loactions in accordance:
+      PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+2, PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+4, PACKET_OFFSET_MMC_SET_1+MMC_DATA_SIZE+6
+      size is 2 and uint16_t is the type.
+===================================================================================================
+
+===================================================================================================
+version 0.9.17  (stage_9_esp4.4.1):
+- changing type12 calibration packet to get from 0 to 8
+  to support the new "Hanoch calibration"
+  *packet calibration 0 must be the same per each board, 
+  the dynamic magnetometer calibration on packet 0 becomes constant and from the factory
+ - led will also blink on navigation state in case of low battery read 
+===================================================================================================
+
+===================================================================================================
+version 0.9.16  (stage_9_esp4.4.1):
+- remove the deep sleep when pressing power key to turn off the board
+  but its not power down because the hardware prevents it to allow charge indication.
+  now - when on this state - kill each task, disable bt, stop any calibration while operation
+  and stop any other operation, till shutting down the board
+- seperate the uart send & get tasks handles
+===================================================================================================
+
+===================================================================================================
+version 0.9.15  (stage_9_esp4.4.1):
+- adding cs to the delivery packets type0,6,10 only
+- adding nav fail ind + resend ongoing on the delivery packets (type0,10 only)  
+- improve battery reading in case of read always 100% but voltage decrease and also in the low limit.
+  finally it will be shown by mask on the msbit of the value: 
+  if its 0 -> battery precent was read directly
+  otherwise -> battery precent was calculated using the battery voltage.
+- turn off board if battery voltage shows below than 2800mv to protect the device.
+- make the first 4 packets on external flash with type 6 (terminal case that was not handled).
+- adding test which allow to read flash packets to explore crash situations.
+- *still ka mechanisem disabled.
+- application added board record raw_bt.bin to read it:
+- *adding python scripts to:
+	1 - plot all the record to txt file
+	2 - read and print all the packets, or read and print 1 range of packets
+- adding also app impostor with python script to test the board indendetly
+- adding delivery of key code on both uart and bt according to new type of request.
+- adding code using mac comnbination and const buffer, and send it after calibration packet 9
+   
+===================================================================================================
+
+===================================================================================================
+version 0.9.14  (stage_9_esp4.4.1):
+
+  imu - contains accelerometer + gyro:
+    accelerometer - 3d acceleration according to the earth g[m/s^2]
+    gyro - 3d angle velocity [rad/s]
+  magnetometer - like a 3d compass, measure intensity of magetic field according to the earth north. units are Tesla or Gauss
+  1T = 10,000 gauss.
+  barometer - measure the atmospheres pressure units bars or pascal.
+  
+  contains:
+    - beginning point for the new board, starting point is old board last version (version 0.8.24) 
+    - changing pinouts and make things work.
+    - implement the flash management differenctly: read & send up to 16 packets per 160ms (100 packets in 1 second)
+                                                   4 reads of 256 bytes per set (1 packet on each set)
+                                                   performed on: wave 1 set1 to set4, wave3 set5 to set8, wave 4 set1 to set8
+                                                   write 4kbytes of packets on 4 sets (4 writes of 256bytes per set),
+                                                   performed on: wave 3 set1 to set4
+                                                   erase sector on wave 1 set 4 - give it 60ms to the next flash operation (not changed)
+    - changing spi frequency of external flash : 5Mhz -> 25Mhz
+    - changing spi frequency of imu and mmc:     5Mhz -> 8Mhz
+    - using sw_def.h flag BT_TYPE0_ONLY & UART_TYPE0_ONLY -
+      changing the type of packets on flash to be only type0 thanks to the speed of the transmittions,
+      and also the type of the current packets when on disconnection mode - (todo - check also with cable)
+    - fixing external flash debug write and read functions.
+    - fix magnetometer set and reset influence on the mmc samples itself:
+      after set and reset the values of the mmc x,y,z were not changed as expected.
+      it happens because need some time to wait between set and reset requests to the sampling perform.
+      the solution is - before starting the mmc measurement imu sampling will be performed.
+      on the last board it was not happened because the mmc worked on i2c with lower freq than 8Mhz, so the component had enough time
+      after performing the set reset which tooks also longer. now the state is different, therefore the fix was done!
+    - adding debug bt prints which allow to see the measurements of the current BT packet which transmitted.
+    - adding more debugs flags in the sw_defs.h.
+    - change defines all over the code with fixing the meanning.
+    - make the uart keyboard debug to behave same with big and small letters when pressing on letters.
+    - increase a bit the time when pressing on the button to reset (1ms to 50ms in case of noise on the i2c expander pwr hold pin)
+    - do not allow read packet from external flash if the last read packet was not finished to be handeled.
+    - changing the previous faults to critical ones: catch robast, write on flash timeout, and packets read id fails.
+    - adding fault codes mask on the led.h
+    - printing on bt the fault codes periodically.
+    - short prints for better performence.
+    - changing names of defines to the right ones
+    - adding manger not sleep fault code when not succeed to sleep after manager task end loop
+    - using ets_printf instaed of printf when not printing floats.
+    - make timeouts on while loops, or fail returns if break loop is not acceptable by the code demands, and prints
+    - lowering i2c scl from 400,000hz to 10,000hz to be able to communicate with the battery.
+    * barometer + io expander works now slower (10,000 hz) 
+    - make the fault led vision with ifdef
+    - power hold is not reset to 0 in the main init to prevent unsuccessful hard reset when cable is off from the board 
+    - power on led faster.
+    - fixing the unwanted "not getting app KA" from board side (for sure, there is still bug from the app which occurr 
+      somewhen and really do not send KA)
+      the bug from the board side was hard to detect because happened after 1.5 hours and not always, moreover than this - 
+      the app cannot handle more than hour, because the memory leak of rafael alghorithm.
+      so thats why it could never be tested till now - when i created impostor app python script.
+      and for the bug - thats how it happens:
+      first of all - when getting KA from App, the stopper really resets itself back to the current time stamp.
+      at the time of packet delivery on any communication, checking that the sub between current time stamp 
+      to the last KA time is not exceeds the 6 seconds - at most it was ok.
+      the reason of the problem is that first the board took the current time and after that KA arrived,
+      therefore the sub between current time stamp to the last KA time is lower than 0. 
+      the board do not need to be depended by user KA timing - assume sending KA each 1ns,
+      so the solution is using uint64_t of the abs of the int64_t number which presents the uint64_t sub between the numbers:
+      (uint64_t)((abs((int64_t)((uint64_t)((x - y)))))))
+      this promise the distance between the 2 points
+      *added test on the sw_defs to make it clearly
+    - seperate print data to imu, mmc, barometer defines
+    - adding manager fault when imu failed of be read
+      * in any case move to the next set and never stuck on sets when read fail.
+      * when sequence of fails occurred - imu&mmc power off, on, and init will occurred
+      * sampling the imu and mmc when done with its inits, and not during! 
+    - initial mmc was somehow on comment and it still worked. now the init operations are perform.
+    - adding test which power off the imu and mmc on sn 100, to see the behaviour of the code
+      when initial those sensors.
+    - adding manager fault when when huge robast timing occurred
+    - sequence of huge timing robast will lead to reset + init imu & mag sensors
+    - adding huge timing robast debug to test system behaviour.
+    - fix i2c output so never turn off imu and mag enable and never turn off, except packent sn = 0 or pressing button.
+    - ka timeout increased to 30 seconds.
+    - ka mechanisem disabled	
+===================================================================================================
+
+===================================================================================================
+version 0.8.24  (stage_8_esp4.4.1):
+  contains:
+    - still liran favour exist - change packets resends from type0 to 10 till type11 instead of catching
+      communication and entering disconnection mode. (check if type0 save on this time is ok for liran)
+    - adding 2 new types, to enable or disable KA usage via the board itself.
+    - fix - overflow buffer bug on read data from external flash. (spi_xfer file)
+    - saving packets on type0 on external flash when in idle mode.
+    - when on idle mode and pressing on the power button - open BT again and wait for connection.
+      If you get a KA from the app, the board will power off itself after 4 seconds, otherwise it will power off after 1min.
+    * when not on idle mode and power button was pressed - board will reset itself like before. 
+    - if on idle mode (the board will not power itself off after 11 min)
+      but on disconnect mode or before pairing (after 11 min - board will power itself off)     
+    - fix - BT mechanisem to the right use (cong and status). 
+    - adding flag which says when ready to resend new packet on BT.
+    - decrease prints bytes amount on BT for debugging.
+    - increase priority of manager Task to the maximum.
+    - fix - terminal case of packet sn resetting after 0xffffff in flash management 
+    - type8 8 - reseting also code_start_flag 
+    - remove uneeded calibration packets log after type8_8.
+    - fix overflow in in_nvs_packet_mem_2 in case of type8_8.
+    - change partition table to support states of board not save calib matrix. (should test it and try find if the problem occur again)
+    - fix - cable communication sometimes will not send packets after type8_8 and KA.
+      setting the flag - short_packet_finished_to_be_sent to true when type8_8 arrive fix the issue. 
+===================================================================================================
+
+===================================================================================================
+version 0.8.23  (stage_8_esp4.4.1):
+  contains:
+    - fix resend on uart cable - tested a bit with debug - seems good 
+    - type8,8 in better way - implementation
+    - fix flash management bugs
+    - make liran favour - change packets resends from type0 to 10 till type11 instead of catching
+      communication and entering disconnection mode
+===================================================================================================
+
+===================================================================================================
+version 0.8.22  (stage_8_esp4.4.1):
+  contains:
+    - change flash management vision
+===================================================================================================
+
+===================================================================================================
+version 0.8.21  (stage_8_esp4.4.1):
+  contains:
+    - pulse sync added before packet delivery only in connection mode (normal packet delivery).
+    - AHRS - 9 new parameters were added to the ahrs, complete - should test.
+
+known issues:
+ - timer - counter time should be 500us but instead of it 480us gives the desired pulse
+===================================================================================================
+
+===================================================================================================
+version 0.8.20  (stage_8_esp4.4.1):
+  contains:
+    - automatic shutdown when device is not connected for at least 11 min.
+
+    - colors mangement in this way: 
+      - yellow - board power up (only in this color - if board doesnt contain calibration matrix - 
+        the led will blink 3 times every 1 second)
+      - blue blink fast - during pairing and before acknowledge from app
+      - blue - connected
+      - green - navigating
+      - if battery precents is lower than 30% - in each state as shown above - it will blink 6 time slowly
+      - red - in case of board fault (after 5 seconds red will appear for 1 second). 
+
+    - memory management - when board has connection - data will be saved on memory as normal packet
+                        - when board has not connected to phone - data will be saved as short packet
+                        - user will get resend packet according whats on the memory and not according to the ask.
+===================================================================================================
+
+
+
+
